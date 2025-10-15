@@ -1,12 +1,17 @@
 # faalkansbeheer
 Het beheren en combineren van faalpaden en faalkansen voor waterkeringen.
 
-Hierarchie is als volgt:
+## Installatie
 
-- Een `dijktraject` bestaat uit meerdere `dijkvakken`
-- voor elk `dijkvak` zijn er één of meerdere `faalpaden` mogelijk
-- Een `faalpad` bestaat uit meerdere `knopen`
-- Voor elke `knoop` wordt per `scenario` een `faalkans` bepaald
-- Een `faalkans` wordt gevormd door een `FragilityCurve`.
-- Een `FragilityCurve` bestaat uit één of meerdere `FragilityPunten`.
-- Een `FragilityPunt` kan bestaan uit een (conditionele) probabilistische berekening.
+* maak een kopie van deze repository door `git clone `
+* maak een virtuele Python environment aan. 
+* installeer alle afhankelijkheden door `pip install -r requirements.txt`
+
+## Quickstart
+
+Run `main.py`
+
+## Documentatie
+
+De documentatie kan worden gegeneerd middels het commando `sphinx-build -M html docs\ docs\_build`. Of in de map docs door `make html`.  
+Je vindt de documentatie daarna terug in de map `\docs\_build\html\index.html`. Dit bestand opent in de browser. Tip: voeg de documentatie toe aan je favorieten van de browser.
