@@ -4,12 +4,12 @@ Het beheren en combineren van faalpaden en faalkansen voor waterkeringen.
 ## Installatie
 
 * maak een kopie van deze repository door `git clone `
-* maak een virtuele Python environment aan. 
+* maak een virtuele Python (versie 3.12 of hoger) environment aan. 
 * installeer alle afhankelijkheden door `pip install -r requirements.txt`
 
 ## Quickstart
 
-Run `main.py`
+Nog aanvullen
 
 ## Documentatie
 
