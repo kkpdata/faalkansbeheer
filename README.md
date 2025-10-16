@@ -5,7 +5,7 @@ Het beheren en combineren van faalpaden en faalkansen voor waterkeringen.
 
 Doel: het opzetten en koppelen van datastructuren zodanig dat:
 
-* faalpaden gedefinieerd en beheerd kunnen worden;
+* per doorsnede faalpaden gedefinieerd en beheerd kunnen worden;
 * er vanuit een verzameling fragility-punten geassembleerd kan worden tot de faalkans van een dijktraject;
 * het mogelijk is te rekenen met scenario's, ook voor indirecte mechanismen;
 * tussenliggende stappen uitgevoerd kunnen worden;
