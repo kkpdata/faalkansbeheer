@@ -1,0 +1,25 @@
+# python
+dist
+.ipynb_checkpoints
+__pycache__
+.pytest_cache
+__hidden__*
+*.pyc
+# auto generated pixi
+docs/docs
+docs/reference
+# Excel ongein
+~$*.xlsx
+# pixi
+.pixi
+*.egg-info
+.quarto/*
+# vscode
+.vscode
+
+# old implementation
+src/failure_paths_old
+background_info
+scripts/example_output
+scripts/example_input/old_template_faalpaden.xlsx
+scripts/example_old.py
