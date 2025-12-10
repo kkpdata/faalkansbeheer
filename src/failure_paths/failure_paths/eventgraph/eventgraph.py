@@ -31,14 +31,7 @@ class EventGraph(BaseModel, ABC):
     @classmethod
     @abstractmethod
     def load(cls) -> Self:
-        """
-        Load the graph data and construct the directed graph.
-
-        Returns
-        -------
-        Self
-            Instantiated event graph populated with validated data.
-        """
+        """Load the graph data and construct the directed graph."""
         pass
 
     def plot(
@@ -52,34 +45,7 @@ class EventGraph(BaseModel, ABC):
         edge_attr: dict[str, str] | None = None,
         event_attr: dict[str, str] | None = None,
     ) -> tuple[Path, graphviz.Digraph]:
-        """
-        Render the graph using Graphviz with wrapped labels.
-
-        Parameters
-        ----------
-        wrap_width : int
-            Maximum label width before line breaks are inserted.
-        output_path : str | Path
-            Path (with extension) where the rendered image is written.
-        view : bool
-            When ``True``, open the rendered file after creation.
-        water_level : float | None
-            When provided, annotate failure nodes with ``h`` and ``Pf`` values
-            derived from the event table at this water level.
-        graph_attr : dict[str, str] | None
-            Graph-level Graphviz attributes to override defaults.
-        node_attr : dict[str, str] | None
-            Node-level Graphviz attributes to override defaults.
-        edge_attr : dict[str, str] | None
-            Edge-level Graphviz attributes to override defaults.
-        event_attr : dict[str, str] | None
-            Custom colors for failure, scenario, and type nodes.
-
-        Returns
-        -------
-        tuple[pathlib.Path, graphviz.Digraph]
-            The rendered file path and the configured Digraph.
-        """
+        """Render the graph using Graphviz with wrapped labels."""
         dot = self._build_graphviz(
             wrap_width=wrap_width,
             water_level=water_level,
@@ -106,34 +72,8 @@ class EventGraph(BaseModel, ABC):
         edge_attr: dict[str, str] | None,
         event_attr: dict[str, str] | None,
     ) -> graphviz.Digraph:
-        """
-        Build a Graphviz Digraph with wrapped labels and event styling.
-
-        Parameters
-        ----------
-        wrap_width : int
-            Maximum label width before line breaks are inserted.
-        water_level : float | None
-            Optional water level used to annotate failure nodes with Pf values.
-        graph_attr : dict[str, str] | None
-            Graph-level Graphviz attribute overrides.
-        node_attr : dict[str, str] | None
-            Node-level Graphviz attribute overrides.
-        edge_attr : dict[str, str] | None
-            Edge-level Graphviz attribute overrides.
-        event_attr : dict[str, str] | None
-            Colors for failure, scenario, and type nodes.
-
-        Returns
-        -------
-        graphviz.Digraph
-            Configured Graphviz digraph ready for rendering.
-        """
-        base_graph_attr = {
-            "rankdir": "LR",
-            "nodesep": "0.6",
-            "ranksep": "1.0",
-        }
+        """Build a Graphviz Digraph with wrapped labels and event styling."""
+        base_graph_attr = {"rankdir": "LR", "nodesep": "0.6", "ranksep": "1.0"}
         base_node_attr = {
             "shape": "box",
             "style": "rounded,filled",
@@ -170,14 +110,11 @@ class EventGraph(BaseModel, ABC):
                 pf = self.graph_events.get_event_prob(nid, water_level, as_beta=False)
             label_text = node.get("description") if node.get("description") else str(node.get("nodeid"))
 
-            # Wrap main text
             wrapped = EventGraph._format_label(label_text, wrap_width)
-
-            # Add waterlevel and failure probabily after wrapped.
             if pf is not None:
-                if pf == 1.0 or pf == 0.0:
+                if pf in (0.0, 1.0):
                     wrapped += f"\\n\\nh={water_level:.2f}\\npf={pf:.1f}"
-                elif pf >= 0.999 and pf < 1.0:
+                elif 0.999 <= pf < 1.0:
                     wrapped += f"\\n\\nh={water_level:.2f}\\npf=1 - {(1 - pf):.2e}"
                 else:
                     wrapped += f"\\n\\nh={water_level:.2f}\\npf={pf:.2e}"
@@ -203,29 +140,11 @@ class EventGraph(BaseModel, ABC):
         self,
         start_nodes: list[tuple[int, int]] | None = None,
     ) -> list[FailurePath]:
-        """
-        Return all unique simple paths from ``start_nodes`` to every failure node.
-
-        Parameters
-        ----------
-        start_nodes : list[tuple[int, int]] | None
-            Optional collection of node identifiers that act as sources. When
-            omitted, the method automatically selects all nodes with zero
-            in-degree (graph roots).
-
-        Returns
-        -------
-        list[FailurePath]
-            Unique simple paths leading to failure nodes (``node_type ==
-            "failure_node"``) represented as :class:`FailurePath` instances.
-        """
+        """Return all unique simple paths from ``start_nodes`` to every failure node."""
         if start_nodes is None:
             start_nodes = [node for node, indeg in self.graph.in_degree() if indeg == 0]
 
-        failure_nodes = []
-        for node_id, data in self.graph.nodes(data=True):
-            if data.get("node_type") == "failure_node":
-                failure_nodes.append(node_id)
+        failure_nodes = [node_id for node_id, data in self.graph.nodes(data=True) if data.get("node_type") == "failure_node"]
 
         paths: list[FailurePath] = []
         seen = set()
@@ -249,30 +168,7 @@ class EventGraph(BaseModel, ABC):
         start_nodes: list[tuple[int, int]] | None = None,
         start_node_pf: float = 1.0,
     ) -> list[FailurePathProbabilities]:
-        """
-        Annotate each simple path with Pf values per node for the requested water level(s).
-
-        Parameters
-        ----------
-        water_levels : float | Sequence[float]
-            Single water level or an iterable of levels to evaluate.
-        start_nodes : list[tuple[int, int]] | None
-            Optional subset of nodes to use as path sources. Defaults to all roots.
-        start_node_pf : float
-            Probability value assigned to start nodes; useful when computing
-            cumulative products along a path.
-
-        Returns
-        -------
-        list[FailurePathProbabilities]
-            Each entry contains the originating path, ``water_levels``, and Pf
-            matrices shaped ``(len(water_levels), len(path))``.
-
-        Raises
-        ------
-        ValueError
-            If ``water_levels`` is empty or cannot be broadcast to a 1D array.
-        """
+        """Annotate each simple path with Pf values per node for the requested water level(s)."""
         levels = np.atleast_1d(np.array(water_levels, dtype=float))
         if levels.ndim != 1 or levels.size == 0:
             raise ValueError("water_levels must be a non-empty scalar or 1D sequence")
@@ -290,9 +186,7 @@ class EventGraph(BaseModel, ABC):
                 else:
                     prob_matrix[:, idx] = self.graph_events.get_event_probs(nid, levels, as_beta=False)
 
-            cum_prob_matrix = prob_matrix.copy()
-            with np.errstate(divide="ignore"):
-                cum_prob_matrix = np.log(cum_prob_matrix)
+            cum_prob_matrix = np.log(prob_matrix, out=np.zeros_like(prob_matrix), where=prob_matrix > 0)
             cum_prob_matrix = np.cumsum(cum_prob_matrix, axis=1)
             cum_prob_matrix = np.exp(cum_prob_matrix)
 
@@ -309,20 +203,5 @@ class EventGraph(BaseModel, ABC):
 
     @staticmethod
     def _format_label(text: str, width: int) -> str:
-        """
-        Wrap text for Graphviz by inserting explicit line breaks.
-
-        Parameters
-        ----------
-        text : str
-            Text to wrap.
-        width : int
-            Maximum line width before wrapping.
-
-        Returns
-        -------
-        str
-            Wrapped text with newline separators.
-        """
         lines = textwrap.wrap(str(text), width=width) or [text]
         return "\n".join(lines)

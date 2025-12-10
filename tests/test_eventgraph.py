@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from failure_paths.eventgraph import EventGraph
-from failure_paths.models import EventTable, MetadataTable
+from failure_paths.eventgraph.models import EventTable, MetadataTable
 
 
 class DummyEventGraph(EventGraph):

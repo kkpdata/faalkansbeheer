@@ -5,8 +5,8 @@ from pathlib import Path
 import networkx as nx
 import pandas as pd
 import pytest
-from failure_paths.models import EventTable, MetadataTable
-from failure_paths.sqlite_store import EventGraphStore, ScenarioInfo
+from failure_paths.eventgraph import EventGraphStore, ScenarioInfo
+from failure_paths.eventgraph.models import EventTable, MetadataTable
 
 from failure_paths import SqliteEventGraph
 

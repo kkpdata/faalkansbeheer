@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -60,21 +61,6 @@ class ExcelEventGraph(EventGraph):
         excel_path: Path | str,
         scenario_sheet: str,
     ) -> ExcelEventGraph:
-        """
-        Load the configured scenario sheet and build a fully populated graph instance.
-
-        Parameters
-        ----------
-        excel_path : Path | str
-            Path to the workbook that contains the scenario sheets.
-        scenario_sheet : str
-            Name of the scenario sheet that stores metadata, paths, and events.
-
-        Returns
-        -------
-        ExcelEventGraph
-            Graph populated with validated tables and the constructed digraph.
-        """
         excel_path = Path(excel_path)
         metadata, paths, events, freq_tables = ExcelEventGraph._find_tables(
             excel_path,
@@ -100,31 +86,6 @@ class ExcelEventGraph(EventGraph):
         freq_tables: dict[str, FrequencyTable],
         start_node: str,
     ) -> nx.DiGraph:
-        """
-        Build a directed graph from the path and event tables.
-
-        Parameters
-        ----------
-        paths : PathTable
-            Validated table describing the sequence of failure events.
-        events : EventTable
-            Table storing failure probabilities for each node.
-        freq_tables : dict[str, FrequencyTable]
-            Frequency lookup tables used to expand scenario nodes when overslag or
-            indirect mechanisms branch.
-        start_node : str
-            Description of the start node
-
-        Returns
-        -------
-        networkx.DiGraph
-            Directed graph populated with node and edge attributes.
-
-        Raises
-        ------
-        ValueError
-            If a node lacks a corresponding failure probability.
-        """
         normalized = ExcelEventGraph._normalize_paths_table(paths)
         scenario_build = ExcelEventGraph._build_scenario_nodes(
             normalized=normalized,
@@ -162,7 +123,6 @@ class ExcelEventGraph(EventGraph):
 
     @staticmethod
     def _normalize_paths_table(paths: PathTable) -> NormalizedPaths:
-        """Normalize path columns, indirect mechanisms, and build grouping indexes."""
         df_paths = paths.df.copy()
         uniq_overslag = df_paths.Overslag.unique().tolist()
         uniq_indirect = df_paths.Indirect_mechanisme.unique().tolist()
@@ -202,7 +162,6 @@ class ExcelEventGraph(EventGraph):
         start_node: str,
         required_columns: tuple[str, ...],
     ) -> ScenarioBuildResult:
-        """Construct scenario nodes/edges and frequency rows, returning grouped rows for events."""
         root_id = (-3, 0)
         nodes: dict[tuple[int, int], GraphNode] = {
             root_id: GraphNode(node_id=root_id, description=start_node, node_type="start_node", type_name=None)
@@ -271,7 +230,6 @@ class ExcelEventGraph(EventGraph):
 
     @staticmethod
     def _build_event_nodes(result: ScenarioBuildResult) -> None:
-        """Populate event nodes and edges for each scenario group."""
         for scenario_group in result.groups:
             for faalpad_id, row in scenario_group.data.iterrows():
                 prev_node = scenario_group.start_node
@@ -292,43 +250,23 @@ class ExcelEventGraph(EventGraph):
         excel_path: Path,
         scenario_sheet: str,
     ) -> tuple[MetadataTable, PathTable, EventTable, dict[str, FrequencyTable] | None]:
-        """
-        Extract all table sections from the scenario sheet.
-
-        Parameters
-        ----------
-        excel_path : Path
-            Path to the workbook that contains the scenario sheets.
-        scenario_sheet : str
-            Name of the worksheet that stores the structured tables.
-
-        Returns
-        -------
-        tuple[MetadataTable, PathTable, EventTable, dict[str, FrequencyTable] | None]
-            Parsed table models and the optional frequency tables indexed by name.
-        """
         with pd.ExcelFile(excel_path, engine="openpyxl") as xlsx:
             offset_mapping = ExcelEventGraph._find_table_offsets(xlsx, sheet_name=scenario_sheet)
 
-            table_mapping = {
+            table_mapping: dict[str, Any] = {
                 KEYWORD_METADATA: MetadataTable,
                 KEYWORD_PATHS: PathTable,
                 KEYWORD_EVENTS: EventTable,
             }
             for i, (key, idx) in enumerate(offset_mapping.items()):
-                # Determine start offset and number of rows
                 idx_start = idx + 1
                 nrows = None
-                idx_end = None
                 if i < len(offset_mapping) - 1:
                     idx_end = offset_mapping[list(offset_mapping.keys())[i + 1]] - 1
                     nrows = idx_end - idx_start
 
-                # Parse part of excel worksheet and drop unnamed columns.
                 df_part = pd.read_excel(xlsx, sheet_name=scenario_sheet, skiprows=idx_start, nrows=nrows)
                 df_part = df_part.loc[:, ~df_part.columns.str.startswith("Unnamed:")]
-
-                # Convert to a table model
                 table_mapping[key] = table_mapping[key].from_dataframe(df_part)
 
             freq_tables = ExcelEventGraph._load_frequency_tables(xlsx)
@@ -342,7 +280,6 @@ class ExcelEventGraph(EventGraph):
 
     @staticmethod
     def _load_frequency_tables(xlsx: pd.ExcelFile) -> dict[str, FrequencyTable]:
-        """Discover and parse all sheets whose name starts with ``FP_``."""
         freq_tables: dict[str, FrequencyTable] = {}
         for sheet_name in xlsx.sheet_names:
             if not sheet_name.upper().startswith("FP_"):
@@ -359,26 +296,6 @@ class ExcelEventGraph(EventGraph):
         xlsx: pd.ExcelFile,
         sheet_name: str,
     ) -> dict[str, int]:
-        """
-        Return the row index of the table keywords on the scenario sheet.
-
-        Parameters
-        ----------
-        xlsx : pd.ExcelFile
-            Open workbook handle used to read the sheet contents.
-        sheet_name : str
-            Sheet whose first column is scanned for keyword markers.
-
-        Returns
-        -------
-        dict[str, int]
-            Mapping from keyword to its zero-based row index.
-
-        Raises
-        ------
-        ValueError
-            If a keyword does not appear exactly once.
-        """
         df_offsets = pd.read_excel(xlsx, sheet_name=sheet_name, usecols="A", header=None)
         df_offsets = df_offsets.iloc[:, 0].str.lower()
 
@@ -388,7 +305,6 @@ class ExcelEventGraph(EventGraph):
             KEYWORD_EVENTS: None,
         }
 
-        # Find the 0 based starting rows of the special keywords
         issues: list[str] = []
         for keyword in offset_mapping.keys():
             loc_key = df_offsets == keyword

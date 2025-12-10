@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-from failure_paths.models import EventTable, MetadataTable, PathTable
+from failure_paths.eventgraph.models import EventTable, MetadataTable, PathTable
 
 
 def test_event_table_fills_pf_and_beta() -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import networkx as nx
 import pandas as pd
-from failure_paths.sqlite_store import deserialize_graph, serialize_graph
+from failure_paths.eventgraph.sqlite_store import deserialize_graph, serialize_graph
 
 
 def build_sample_graph() -> nx.DiGraph:

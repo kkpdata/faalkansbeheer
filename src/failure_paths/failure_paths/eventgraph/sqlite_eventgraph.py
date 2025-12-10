@@ -28,28 +28,6 @@ class SqliteEventGraph(EventGraph):
         source_path: str | None = None,
         sheet_name: str | None = None,
     ) -> Self:
-        """
-        Load a stored scenario and rebuild the event graph.
-
-        Parameters
-        ----------
-        db_path : str | Path
-            SQLite database produced by the ingestion workflow.
-        scenario_id : int | None, optional
-            Primary key of the scenario in the ``scenarios`` table.
-        section : str | None, optional
-            Scenario section used to partition the workspace; must accompany
-            ``source_path`` and ``sheet_name`` when ``scenario_id`` is omitted.
-        source_path : str | None, optional
-            Path to the original workbook; combined with ``section`` and ``sheet_name`` forms the unique key.
-        sheet_name : str | None, optional
-            Scenario sheet name; must be provided together with ``section`` and ``source_path`` when ``scenario_id`` is omitted.
-
-        Returns
-        -------
-        SqliteEventGraph
-            Fully populated graph equivalent to the Excel-based version.
-        """
         store = EventGraphStore(db_path, read_only=True)
         try:
             scenario = store.fetch_scenario(
@@ -72,7 +50,6 @@ class SqliteEventGraph(EventGraph):
         *,
         section: str | None = None,
     ) -> list[ScenarioInfo]:
-        """Return rows from the ``scenarios`` table for discovery/CLI usage."""
         store = EventGraphStore(db_path, read_only=True)
         try:
             return store.list_scenarios(section=section)

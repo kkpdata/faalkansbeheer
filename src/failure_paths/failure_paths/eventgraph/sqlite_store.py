@@ -10,17 +10,6 @@ from pathlib import Path
 import networkx as nx
 import pandas as pd
 
-"""
-SQLite persistence helpers for Excel-derived failure-path scenarios.
-
-This module centralises the schema definition, connection lifecycle, and the
-serialization routines required to store tabular scenario data alongside the
-networkx digraph representation.  Higher-level loaders (Excel/SQLite
-EventGraphs) can rely on :class:`EventGraphStore` to keep inserts transactional
-and efficient.
-"""
-
-
 SCHEMA_VERSION = 1
 
 
@@ -134,11 +123,9 @@ class EventGraphStore:
 
     @property
     def connection(self) -> sqlite3.Connection:
-        """Return an open SQLite connection, creating it when needed."""
         return self.connect()
 
     def connect(self) -> sqlite3.Connection:
-        """Open a SQLite connection lazily and ensure the schema exists."""
         if self._conn is not None:
             return self._conn
 
@@ -156,13 +143,11 @@ class EventGraphStore:
         return conn
 
     def close(self) -> None:
-        """Close the underlying SQLite connection."""
         if self._conn is not None:
             self._conn.close()
             self._conn = None
 
     def _apply_pragmas(self, conn: sqlite3.Connection) -> None:
-        """Configure pragmatic defaults for durability/performance."""
         conn.execute("PRAGMA foreign_keys = ON")
         if self.read_only:
             return
@@ -170,20 +155,17 @@ class EventGraphStore:
         conn.execute("PRAGMA synchronous = NORMAL")
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
-        """Create tables/indexes and enforce a simple schema version."""
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version == 0:
             for stmt in CREATE_STATEMENTS:
                 conn.execute(stmt)
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             return
-
         if version != SCHEMA_VERSION:
             raise RuntimeError(f"Unsupported database schema version {version}; expected {SCHEMA_VERSION}")
 
     @contextlib.contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        """Atomic transaction wrapper that rolls back automatically on failure."""
         conn = self.connect()
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -204,7 +186,6 @@ class EventGraphStore:
         tags: str | None = None,
         conn: sqlite3.Connection | None = None,
     ) -> int:
-        """Insert or update a scenario entry and return its identifier."""
         now = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
         query = """
             INSERT INTO scenarios (section, source_path, sheet_name, start_node_label, ingested_at, tags)
@@ -241,32 +222,6 @@ class EventGraphStore:
         source_path: str | None = None,
         sheet_name: str | None = None,
     ) -> ScenarioInfo:
-        """
-        Retrieve a single scenario row.
-
-        Parameters
-        ----------
-        scenario_id : int | None, optional
-            Numeric primary key. When provided, other filters are ignored.
-        section : str | None, optional
-            Section identifier; must be provided together with ``source_path`` and ``sheet_name`` when ``scenario_id`` is omitted.
-        source_path : str | None, optional
-            Path to the source Excel file; paired with ``section`` and ``sheet_name`` for unique lookup.
-        sheet_name : str | None, optional
-            Scenario worksheet name; required alongside ``section`` and ``source_path`` when ``scenario_id`` is omitted.
-
-        Returns
-        -------
-        ScenarioInfo
-            Scenario metadata mapped to strongly typed fields.
-
-        Raises
-        ------
-        LookupError
-            If no matching scenario could be found.
-        ValueError
-            When insufficient identifiers are provided.
-        """
         conn = self.connect()
         if scenario_id is not None:
             row = conn.execute("SELECT * FROM scenarios WHERE id = ?", (scenario_id,)).fetchone()
@@ -294,7 +249,6 @@ class EventGraphStore:
         )
 
     def list_scenarios(self, *, section: str | None = None) -> list[ScenarioInfo]:
-        """Return all scenario rows, optionally filtered by section."""
         conn = self.connect()
         if section:
             rows = conn.execute(
@@ -323,10 +277,8 @@ class EventGraphStore:
         *,
         conn: sqlite3.Connection | None = None,
     ) -> None:
-        """Remove all rows for ``scenario_id`` from the requested tables."""
         if conn is None:
             conn = self.connect()
-
         for table in tables:
             conn.execute(f"DELETE FROM {table} WHERE scenario_id = ?", (scenario_id,))
 
@@ -339,23 +291,6 @@ class EventGraphStore:
         conn: sqlite3.Connection | None = None,
         replace: bool = True,
     ) -> None:
-        """
-        Persist a dataframe into one of the normalized tables for ``scenario_id``.
-
-        Parameters
-        ----------
-        table_name : str
-            Target table that must contain a ``scenario_id`` column.
-        df : pd.DataFrame
-            Dataframe to append.
-        scenario_id : int
-            Scenario foreign key.
-        conn : sqlite3.Connection | None
-            Optional open transaction connection; when omitted, the method creates
-            a dedicated transaction.
-        replace : bool
-            When ``True`` existing rows for the scenario are removed before insert; when ``False`` data is appended.
-        """
         if conn is None:
             conn = self.connect()
 
@@ -378,7 +313,6 @@ class EventGraphStore:
         conn.executemany(insert_sql, payload.itertuples(index=False, name=None))
 
     def read_dataframe(self, table_name: str, scenario_id: int) -> pd.DataFrame:
-        """Read rows linked to ``scenario_id`` and drop the ``scenario_id`` column."""
         query = f"SELECT * FROM {table_name} WHERE scenario_id = ?"
         df_sql = pd.read_sql_query(query, self.connect(), params=(scenario_id,))
         if "scenario_id" in df_sql.columns:
@@ -392,7 +326,6 @@ class EventGraphStore:
         *,
         conn: sqlite3.Connection | None = None,
     ) -> None:
-        """Persist the provided ``networkx`` graph into the node/edge tables."""
         nodes_df, edges_df = serialize_graph(graph)
         if conn is None:
             with self.transaction() as tx_conn:
@@ -403,14 +336,12 @@ class EventGraphStore:
         self.write_dataframe("graph_edges", edges_df, scenario_id, conn=conn)
 
     def read_graph(self, scenario_id: int) -> nx.DiGraph:
-        """Load nodes and edges for ``scenario_id`` and rebuild the digraph."""
         nodes_df = self.read_dataframe("graph_nodes", scenario_id)
         edges_df = self.read_dataframe("graph_edges", scenario_id)
         return deserialize_graph(nodes_df, edges_df)
 
 
 def serialize_graph(graph: nx.DiGraph) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Convert a :class:`networkx.DiGraph` into pandas dataframes."""
     node_rows = []
     for node_id, attrs in graph.nodes(data=True):
         faalpad_id, knoop_id = _split_node_id(node_id)
@@ -441,7 +372,6 @@ def serialize_graph(graph: nx.DiGraph) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def deserialize_graph(nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> nx.DiGraph:
-    """Rebuild a :class:`networkx.DiGraph` from serialized node and edge frames."""
     graph = nx.DiGraph()
     for row in nodes_df.itertuples(index=False):
         node_id = (int(row.faalpad_id), int(row.knoop_id))
@@ -461,7 +391,6 @@ def deserialize_graph(nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> nx.DiGr
 
 
 def _split_node_id(node_id: object) -> tuple[int, int]:
-    """Validate and split a tuple-based node identifier."""
     if isinstance(node_id, tuple) and len(node_id) == 2:
         return int(node_id[0]), int(node_id[1])
     raise TypeError(f"Node identifiers must be ``(faalpad_id, knoop_id)`` tuples; got {node_id!r}")

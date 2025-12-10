@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from failure_paths.models import PathTable
+from failure_paths.eventgraph.models import PathTable
 from openpyxl import Workbook
 
 from failure_paths import ExcelEventGraph

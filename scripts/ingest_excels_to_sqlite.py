@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from failure_paths.excel_eventgraph import ExcelEventGraph
-from failure_paths.sqlite_eventgraph import SqliteEventGraph
-from failure_paths.sqlite_store import EventGraphStore
+from failure_paths.eventgraph import EventGraphStore, ExcelEventGraph, SqliteEventGraph
 
 # ---------------------------------------------------------------------------
 # Configuration – adjust these values before running the script.
@@ -88,6 +86,8 @@ if __name__ == "__main__":
             for p in paths:
                 print(p)
             results = restored.get_failure_path_probabilities(water_levels=[3, 4])
+            for r in results:
+                print(r.cumulative_probabilities)
 
     if errors:
         print("\nIngestion completed with errors:")
