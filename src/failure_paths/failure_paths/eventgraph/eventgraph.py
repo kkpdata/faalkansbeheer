@@ -144,7 +144,9 @@ class EventGraph(BaseModel, ABC):
         if start_nodes is None:
             start_nodes = [node for node, indeg in self.graph.in_degree() if indeg == 0]
 
-        failure_nodes = [node_id for node_id, data in self.graph.nodes(data=True) if data.get("node_type") == "failure_node"]
+        failure_nodes = [
+            node_id for node_id, data in self.graph.nodes(data=True) if data.get("node_type") == "failure_node"
+        ]
 
         paths: list[FailurePath] = []
         seen = set()
