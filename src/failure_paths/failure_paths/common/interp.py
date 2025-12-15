@@ -14,10 +14,11 @@ class LinearInterpolator:
       unsorted knots without caring about their original ordering.
     * Duplicate ``x`` values (plateaus) are preserved and therefore still
       map to the *last* ``y`` value at that level when querying exactly on
-      the plateau; SciPy's own extrapolation path handles this once the
-      data stay sorted.
-    * ``interp1d`` is instantiated with ``fill_value="extrapolate"`` so
-      evaluations outside the knot range stay linear.
+      the plateau. This is achieved by composing two SciPy interpolants:
+      one bounded spline that mirrors plateau semantics (returns ``NaN`` outside
+      the range) and a lazy extrapolating spline used only to fill those ``NaN``
+      entries. As a result, evaluations outside the knot range still follow
+      the linear continuation.
     """
 
     def __init__(self, x: np.ndarray, y: np.ndarray) -> None:
@@ -61,7 +62,12 @@ class LinearInterpolator:
             fill_value=np.nan,
             assume_sorted=False,
         )
-        self._extrap = interp1d(x_arr, y_arr, fill_value="extrapolate", assume_sorted=False)
+        self._extrap = interp1d(
+            x_arr,
+            y_arr,
+            fill_value="extrapolate",
+            assume_sorted=False,
+        )
 
     def value(self, x_query: np.ndarray | float) -> np.ndarray | float:
         """
@@ -79,16 +85,19 @@ class LinearInterpolator:
         """
         is_scalar = np.isscalar(x_query)
         query = np.asarray(x_query, dtype=float)
-        result = self._interp(query)
+        with np.errstate(divide="ignore"):
+            result = self._interp(query)
         if is_scalar:
             value = float(result)
             if np.isnan(value):
-                return float(self._extrap(query))
+                with np.errstate(divide="ignore"):
+                    return float(self._extrap(query))
             return value
 
         nan_mask = np.isnan(result)
         if np.any(nan_mask):
-            result[nan_mask] = self._extrap(query[nan_mask])
+            with np.errstate(divide="ignore"):
+                result[nan_mask] = self._extrap(query[nan_mask])
 
         if is_scalar:
             return float(result)
