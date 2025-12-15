@@ -47,6 +47,7 @@ scipy = ">=1.16"
 quarto = ">=1.5"
 quartodoc = ">=0.9"
 pre-commit = ">=4.5"
+matplotlib = ">=3.10.8,<4"
 
 [pypi-dependencies]
 failure_paths = { path = "src/failure_paths", editable = true }

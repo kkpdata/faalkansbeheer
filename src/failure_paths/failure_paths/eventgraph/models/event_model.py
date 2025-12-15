@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import Series
-from scipy.interpolate import interp1d
 from scipy.stats import norm
 
+from ...common.interp import LinearInterpolator
 from .table_model import TableModel
 
 
@@ -89,15 +89,12 @@ class EventTable(TableModel):
             Interpolated probabilities or reliability indices for each water level.
         """
         subset = self.df.loc[node_id, ["h", "Beta_h"]]
+        h_array = np.asarray(h, dtype=float)
         if len(subset) == 1:
-            interp_vals = np.full(np.array(h).shape, subset.Beta_h.iat[0])
+            interp_vals = np.full(h_array.shape, subset.Beta_h.iat[0])
         else:
-            interp_vals = interp1d(
-                subset.h.to_numpy(),
-                subset.Beta_h.to_numpy(),
-                fill_value="extrapolate",
-                assume_sorted=False,
-            )(h)
+            interpolator = LinearInterpolator(subset.h.to_numpy(), subset.Beta_h.to_numpy())
+            interp_vals = interpolator.value(h_array)
 
         if not as_beta:
             interp_vals = norm.sf(interp_vals)
