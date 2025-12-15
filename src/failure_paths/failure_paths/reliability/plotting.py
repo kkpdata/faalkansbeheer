@@ -29,11 +29,11 @@ class IntegrationGridPlotter:
 
         Parameters
         ----------
-        ax : Axes | None, optional
+        ax : Axes | None
             Matplotlib axes receiving the drawing. A fresh figure/axes pair is created when omitted.
-        figsize : tuple[float, float], default=(6.0, 6.0)
+        figsize : tuple[float, float]
             Size used for the fallback figure when ``ax`` is ``None``.
-        limit_points : int, default=1025
+        limit_points : int
             Number of samples used to draw the ``z = 0`` curve in U-space.
 
         Returns

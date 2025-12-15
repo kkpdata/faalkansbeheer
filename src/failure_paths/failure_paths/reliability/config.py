@@ -37,13 +37,18 @@ class IntegrationConfig(BaseModel):
 
         Parameters
         ----------
-        value:
-            User supplied distribution.
+        value : Any | None
+            User supplied distribution (or ``None`` when a curve drives the axis).
 
         Returns
         -------
-        openturns.Distribution
-            Validated OpenTURNS distribution.
+        ot.Distribution | None
+            Validated OpenTURNS distribution or ``None``.
+
+        Raises
+        ------
+        TypeError
+            If the supplied object does not implement the ``computeCDF`` and ``computeQuantile`` API.
         """
         if value is None:
             return None
@@ -60,10 +65,20 @@ class IntegrationConfig(BaseModel):
 
         Parameters
         ----------
-        value:
+        value : float
             Proposed upper bound for the U-grid.
-        info:
+        info : ValidationInfo
             Validation context containing the lower bound.
+
+        Returns
+        -------
+        float
+            Validated ``u_max``.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` is not strictly greater than ``u_min``.
         """
         data = info.data or {}
         u_min = data.get("u_min")

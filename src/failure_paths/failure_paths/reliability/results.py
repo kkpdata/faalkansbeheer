@@ -52,8 +52,13 @@ class IntegrationResult:
 
         Parameters
         ----------
-        include_samples:
+        include_samples : bool
             Whether to include the failure samples and weights.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable structure containing the result summary and optional samples.
         """
         data: dict[str, object] = {
             "pf": float(self.pf),

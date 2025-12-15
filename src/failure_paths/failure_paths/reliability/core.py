@@ -33,10 +33,16 @@ class _DistributionGridData:
 
 
 class ReliabilityIntegrator:
-    """Coordinate grid integration in either distribution or hazard/fragility mode."""
+    """
+    Coordinate grid integration in either distribution or hazard/fragility mode.
+
+    Parameters
+    ----------
+    config : IntegrationConfig
+        User-supplied configuration describing the distributions/curves, grid settings, and U-range.
+    """
 
     def __init__(self, config: IntegrationConfig) -> None:
-        """Store configuration for later runs."""
         self.config = config
         self._using_curve_distributions = False
         self._r_distribution: ot.Distribution
@@ -63,12 +69,12 @@ class ReliabilityIntegrator:
 
         Parameters
         ----------
-        x:
+        x : np.ndarray | float
             Values in U-space where the CDF is evaluated.
 
         Returns
         -------
-        numpy.ndarray | float
+        np.ndarray | float
             Probability values with the same shape as the input.
         """
         arr = np.atleast_1d(x)
@@ -82,13 +88,20 @@ class ReliabilityIntegrator:
 
         Parameters
         ----------
-        u1, u2:
-            Arrays containing the U-coordinates for R and S.
+        u1 : np.ndarray
+            U-space coordinates for resistance.
+        u2 : np.ndarray
+            U-space coordinates for solicitation.
 
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             Limit-state values with the same broadcastable shape.
+
+        Raises
+        ------
+        ValueError
+            If ``u1`` and ``u2`` do not share the same shape.
         """
         u1_arr = np.asarray(u1)
         u2_arr = np.asarray(u2)
@@ -216,12 +229,12 @@ class ReliabilityIntegrator:
 
         Parameters
         ----------
-        u_values : numpy.ndarray
+        u_values : np.ndarray
             Points along the R-axis (in U-space) used to trace the limit-state curve.
 
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             Matching U-space values for the solicitation axis that satisfy ``r - s = 0``.
         """
         probs_r = self.standard_normal_cdf(u_values)
@@ -318,13 +331,18 @@ class ReliabilityIntegrator:
 
         Parameters
         ----------
-        samples:
+        samples : FailureSamples
             Weighted failure cell representation created by the integration step.
 
         Returns
         -------
         IntegrationResult
             Failure probability, design point, and diagnostics.
+
+        Raises
+        ------
+        RuntimeError
+            If no failure cells are available for post-processing.
         """
         w_fail = samples.weights
         U_fail = samples.points
