@@ -106,8 +106,10 @@ class EventGraph(BaseModel, ABC):
 
         for nid, node in self.graph.nodes.items():
             pf = None
+            beta = None
             if water_level is not None and node["node_type"] != "start_node":
                 pf = self.graph_events.get_event_prob(nid, water_level, as_beta=False)
+                beta = self.graph_events.get_event_prob(nid, water_level, as_beta=True)
             label_text = node.get("description") if node.get("description") else str(node.get("nodeid"))
 
             wrapped = EventGraph._format_label(label_text, wrap_width)
@@ -118,6 +120,8 @@ class EventGraph(BaseModel, ABC):
                     wrapped += f"\\n\\nh={water_level:.2f}\\npf=1 - {(1 - pf):.2e}"
                 else:
                     wrapped += f"\\n\\nh={water_level:.2f}\\npf={pf:.2e}"
+            if beta is not None:
+                wrapped += f"\\nβ={beta:.2f}"
 
             node_kwargs: dict[str, str] = {}
             if node["node_type"] == "failure_node":
