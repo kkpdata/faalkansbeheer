@@ -8,6 +8,13 @@ class LinearInterpolator:
     """
     Lightweight wrapper around :func:`scipy.interpolate.interp1d`.
 
+    Parameters
+    ----------
+    x : np.ndarray
+        Knot locations (e.g. water levels). The array may be unsorted and may contain duplicates.
+    y : np.ndarray
+        Function values at the knots. Must have the same length as ``x``.
+
     Notes
     -----
     * Inputs are copied, flattened, and stably sorted so callers may pass
@@ -19,26 +26,15 @@ class LinearInterpolator:
       the range) and a lazy extrapolating spline used only to fill those ``NaN``
       entries. As a result, evaluations outside the knot range still follow
       the linear continuation.
+
+    Raises
+    ------
+    ValueError
+        Raised when ``x``/``y`` lengths differ, fewer than two points are provided, or the
+        sorted ``x`` knots are decreasing.
     """
 
     def __init__(self, x: np.ndarray, y: np.ndarray) -> None:
-        """
-        Create a 1D linear interpolator on the provided knots.
-
-        Parameters
-        ----------
-        x :
-            Knot locations (e.g. water levels). The array may be unsorted and
-            may contain duplicate values.
-        y :
-            Function values at the knots. Must have the same length as ``x``.
-
-        Raises
-        ------
-        ValueError
-            If ``x``/``y`` lengths differ, fewer than two points are provided,
-            or the sorted ``x`` knots are decreasing (e.g. ``[2, 1, 0]``).
-        """
         x_arr = np.asarray(x, dtype=float).reshape(-1)
         y_arr = np.asarray(y, dtype=float).reshape(-1)
         if x_arr.size != y_arr.size:
@@ -75,12 +71,12 @@ class LinearInterpolator:
 
         Parameters
         ----------
-        x_query :
+        x_query : np.ndarray | float
             Scalar or array-like coordinates at which to sample the interpolant.
 
         Returns
         -------
-        numpy.ndarray | float
+        np.ndarray | float
             Interpolated values with the same shape as ``x_query``.
         """
         is_scalar = np.isscalar(x_query)
@@ -109,13 +105,13 @@ class LinearInterpolator:
 
         Parameters
         ----------
-        y_query :
+        y_query : np.ndarray | float
             Scalar or array-like ``y`` values whose corresponding ``x`` knots
             should be interpolated.
 
         Returns
         -------
-        numpy.ndarray | float
+        np.ndarray | float
             Interpolated ``x`` values.
         """
         inverse_interp = LinearInterpolator(self._y_nodes, self._x_nodes)
