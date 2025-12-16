@@ -1,3 +1,5 @@
+"""Reliability integration primitives and convenience re-exports."""
+
 from .config import IntegrationConfig
 from .core import ReliabilityIntegrator
 from .curves import FragilityCurve, HazardCurve

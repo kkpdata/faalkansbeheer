@@ -1,3 +1,5 @@
+"""Event-graph ingestion, modelling, and persistence utilities."""
+
 from .eventgraph import EventGraph
 from .excel_eventgraph import ExcelEventGraph
 from .sqlite_eventgraph import SqliteEventGraph

@@ -120,7 +120,25 @@ class ReliabilityIntegrator:
         u_values_cdf: np.ndarray | None = None,
         u_values_survival: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Map U-space coordinates to physical values for the given distribution."""
+        """Map U-space coordinates to distribution quantiles.
+
+        Parameters
+        ----------
+        u_values : np.ndarray
+            Coordinates in standard-normal space.
+        dist : ot.Distribution
+            Distribution whose quantiles will be evaluated.
+        u_values_cdf : np.ndarray | None, optional
+            Precomputed lower-tail probabilities for ``u_values``. When omitted,
+            they are derived internally.
+        u_values_survival : np.ndarray | None, optional
+            Precomputed survival probabilities (upper tail) for ``u_values``.
+
+        Returns
+        -------
+        np.ndarray
+            Quantiles with the same shape as ``u_values``.
+        """
         arr = np.asarray(u_values)
         need_cdf = u_values_cdf is None
         need_survival = u_values_survival is None
@@ -159,7 +177,23 @@ class ReliabilityIntegrator:
         compute_cdf: bool = True,
         compute_survival: bool = True,
     ) -> tuple[np.ndarray | None, np.ndarray | None]:
-        """Return lower-tail CDF and upper-tail survival probabilities for U values."""
+        """Return lower-tail CDF and survival probabilities.
+
+        Parameters
+        ----------
+        u_values : np.ndarray
+            Standard-normal coordinates.
+        compute_cdf : bool, default=True
+            Whether to compute the lower-tail probabilities.
+        compute_survival : bool, default=True
+            Whether to compute the upper-tail probabilities.
+
+        Returns
+        -------
+        tuple[np.ndarray | None, np.ndarray | None]
+            Lower-tail CDF values and survival probabilities (each may be
+            ``None`` when the corresponding ``compute_*`` flag is ``False``).
+        """
         arr = np.asarray(u_values)
         flat = arr.reshape(-1)
         cdf = None
@@ -181,7 +215,22 @@ class ReliabilityIntegrator:
         edges_cdf: np.ndarray | None = None,
         edges_survival: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Compute standard-normal probabilities for intervals defined by `edges`."""
+        """Compute standard-normal probabilities for intervals defined by ``edges``.
+
+        Parameters
+        ----------
+        edges : np.ndarray
+            Monotone U-grid coordinates whose consecutive pairs define intervals.
+        edges_cdf : np.ndarray | None, optional
+            Lower-tail CDF values for ``edges``. Computed on demand when omitted.
+        edges_survival : np.ndarray | None, optional
+            Survival probabilities for ``edges``. Computed on demand when omitted.
+
+        Returns
+        -------
+        np.ndarray
+            Interval probabilities matching ``edges.shape[:-1]``.
+        """
         arr = np.asarray(edges)
         need_cdf = edges_cdf is None
         need_survival = edges_survival is None

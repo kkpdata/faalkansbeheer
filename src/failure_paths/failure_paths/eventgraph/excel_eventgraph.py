@@ -61,6 +61,20 @@ class ExcelEventGraph(EventGraph):
         excel_path: Path | str,
         scenario_sheet: str,
     ) -> ExcelEventGraph:
+        """Load an Excel scenario sheet and build the graph representation.
+
+        Parameters
+        ----------
+        excel_path : Path | str
+            Workbook containing the scenario data.
+        scenario_sheet : str
+            Name of the sheet holding the metadata/paths/events tables.
+
+        Returns
+        -------
+        ExcelEventGraph
+            Populated graph instance backed by the supplied workbook.
+        """
         excel_path = Path(excel_path)
         metadata, paths, events, freq_tables = ExcelEventGraph._find_tables(
             excel_path,
@@ -86,6 +100,24 @@ class ExcelEventGraph(EventGraph):
         freq_tables: dict[str, FrequencyTable],
         start_node: str,
     ) -> nx.DiGraph:
+        """Translate normalized tables into a directed graph.
+
+        Parameters
+        ----------
+        paths : PathTable
+            Failure path definitions.
+        events : EventTable
+            Table containing Pf/Beta values.
+        freq_tables : dict[str, FrequencyTable]
+            Optional exceedance-frequency tables keyed by scenario attribute.
+        start_node : str
+            Label used for the root node.
+
+        Returns
+        -------
+        nx.DiGraph
+            Directed event graph with node metadata and EventTable.
+        """
         normalized = ExcelEventGraph._normalize_paths_table(paths)
         scenario_build = ExcelEventGraph._build_scenario_nodes(
             normalized=normalized,
@@ -123,6 +155,18 @@ class ExcelEventGraph(EventGraph):
 
     @staticmethod
     def _normalize_paths_table(paths: PathTable) -> NormalizedPaths:
+        """Normalize the raw path table and derive grouping metadata.
+
+        Parameters
+        ----------
+        paths : PathTable
+            Input table describing scenario combinations and events.
+
+        Returns
+        -------
+        NormalizedPaths
+            Container with the normalized dataframe and group metadata.
+        """
         df_paths = paths.df.copy()
         uniq_overslag = df_paths.Overslag.unique().tolist()
         uniq_indirect = df_paths.Indirect_mechanisme.unique().tolist()
@@ -162,6 +206,24 @@ class ExcelEventGraph(EventGraph):
         start_node: str,
         required_columns: tuple[str, ...],
     ) -> ScenarioBuildResult:
+        """Create scenario nodes and edges for every overslag/indirect group.
+
+        Parameters
+        ----------
+        normalized : NormalizedPaths
+            Preprocessed path information returned by :meth:`_normalize_paths_table`.
+        freq_tables : dict[str, FrequencyTable]
+            Frequency tables used to populate Pf rows for each scenario dimension.
+        start_node : str
+            Label applied to the root node.
+        required_columns : tuple[str, ...]
+            Required column order used when populating frequency rows.
+
+        Returns
+        -------
+        ScenarioBuildResult
+            Nodes, edges, frequency samples, and grouped event data.
+        """
         root_id = (-3, 0)
         nodes: dict[tuple[int, int], GraphNode] = {
             root_id: GraphNode(node_id=root_id, description=start_node, node_type="start_node", type_name=None)
@@ -230,6 +292,13 @@ class ExcelEventGraph(EventGraph):
 
     @staticmethod
     def _build_event_nodes(result: ScenarioBuildResult) -> None:
+        """Expand each scenario group into event nodes and edges.
+
+        Parameters
+        ----------
+        result : ScenarioBuildResult
+            Mutable container populated by :meth:`_build_scenario_nodes`.
+        """
         for scenario_group in result.groups:
             for faalpad_id, row in scenario_group.data.iterrows():
                 prev_node = scenario_group.start_node
@@ -250,6 +319,25 @@ class ExcelEventGraph(EventGraph):
         excel_path: Path,
         scenario_sheet: str,
     ) -> tuple[MetadataTable, PathTable, EventTable, dict[str, FrequencyTable] | None]:
+        """Locate the metadata/path/event tables within the workbook.
+
+        Parameters
+        ----------
+        excel_path : Path
+            Workbook path.
+        scenario_sheet : str
+            Sheet name containing the required tables.
+
+        Returns
+        -------
+        tuple
+            Metadata, path, event tables, plus frequency tables if present.
+
+        Raises
+        ------
+        ValueError
+            If required sections are missing or duplicated.
+        """
         with pd.ExcelFile(excel_path, engine="openpyxl") as xlsx:
             offset_mapping = ExcelEventGraph._find_table_offsets(xlsx, sheet_name=scenario_sheet)
 
@@ -280,6 +368,18 @@ class ExcelEventGraph(EventGraph):
 
     @staticmethod
     def _load_frequency_tables(xlsx: pd.ExcelFile) -> dict[str, FrequencyTable]:
+        """Load frequency tables from sheets prefixed with ``FP_``.
+
+        Parameters
+        ----------
+        xlsx : pd.ExcelFile
+            Open workbook handle reused while parsing other tables.
+
+        Returns
+        -------
+        dict[str, FrequencyTable]
+            Mapping of frequency table type to validated :class:`FrequencyTable`.
+        """
         freq_tables: dict[str, FrequencyTable] = {}
         for sheet_name in xlsx.sheet_names:
             if not sheet_name.upper().startswith("FP_"):
@@ -296,6 +396,7 @@ class ExcelEventGraph(EventGraph):
         xlsx: pd.ExcelFile,
         sheet_name: str,
     ) -> dict[str, int]:
+        """Return row offsets where the metadata/path/event tables start."""
         df_offsets = pd.read_excel(xlsx, sheet_name=sheet_name, usecols="A", header=None)
         df_offsets = df_offsets.iloc[:, 0].str.lower()
 

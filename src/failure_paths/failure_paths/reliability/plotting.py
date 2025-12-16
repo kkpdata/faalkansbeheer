@@ -16,6 +16,13 @@ class IntegrationGridPlotter:
     """Render the integration grid of a ReliabilityIntegrator instance."""
 
     def __init__(self, integrator: ReliabilityIntegrator) -> None:
+        """Initialize the plotter.
+
+        Parameters
+        ----------
+        integrator : ReliabilityIntegrator
+            Integrator whose grid and diagnostics will be visualized.
+        """
         self.integrator = integrator
 
     def plot(

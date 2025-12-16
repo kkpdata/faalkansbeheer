@@ -28,6 +28,23 @@ class SqliteEventGraph(EventGraph):
         source_path: str | None = None,
         sheet_name: str | None = None,
     ) -> Self:
+        """Load a scenario from the SQLite store.
+
+        Parameters
+        ----------
+        db_path : str | Path
+            SQLite database created by :class:`EventGraphStore`.
+        scenario_id : int | None, default=None
+            Explicit scenario id to load. When omitted, the ``section``,
+            ``source_path``, and ``sheet_name`` triple must be supplied.
+        section, source_path, sheet_name : str | None
+            Scenario identifiers used when ``scenario_id`` is not provided.
+
+        Returns
+        -------
+        SqliteEventGraph
+            Graph populated from the stored scenario rows.
+        """
         store = EventGraphStore(db_path, read_only=True)
         try:
             scenario = store.fetch_scenario(
@@ -50,6 +67,20 @@ class SqliteEventGraph(EventGraph):
         *,
         section: str | None = None,
     ) -> list[ScenarioInfo]:
+        """List scenarios stored in the SQLite database.
+
+        Parameters
+        ----------
+        db_path : str | Path
+            SQLite database path.
+        section : str | None, default=None
+            Optional filter limiting the results to a single section.
+
+        Returns
+        -------
+        list[ScenarioInfo]
+            Metadata records describing each available scenario.
+        """
         store = EventGraphStore(db_path, read_only=True)
         try:
             return store.list_scenarios(section=section)

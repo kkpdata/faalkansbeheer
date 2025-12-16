@@ -110,6 +110,15 @@ class EventGraphStore:
     """Lightweight helper that persists scenario data and graph artifacts in SQLite."""
 
     def __init__(self, db_path: str | Path, *, read_only: bool = False) -> None:
+        """Create a store bound to ``db_path``.
+
+        Parameters
+        ----------
+        db_path : str | Path
+            SQLite file location.
+        read_only : bool, default=False
+            When ``True`` the store opens the database in read-only mode.
+        """
         self.db_path = Path(db_path)
         self.read_only = read_only
         self._conn: sqlite3.Connection | None = None
@@ -123,9 +132,11 @@ class EventGraphStore:
 
     @property
     def connection(self) -> sqlite3.Connection:
+        """Return an active SQLite connection, opening one if needed."""
         return self.connect()
 
     def connect(self) -> sqlite3.Connection:
+        """Open a SQLite connection and ensure the schema exists."""
         if self._conn is not None:
             return self._conn
 
@@ -143,11 +154,13 @@ class EventGraphStore:
         return conn
 
     def close(self) -> None:
+        """Close the active SQLite connection (if any)."""
         if self._conn is not None:
             self._conn.close()
             self._conn = None
 
     def _apply_pragmas(self, conn: sqlite3.Connection) -> None:
+        """Apply performance and safety pragmas to the connection."""
         conn.execute("PRAGMA foreign_keys = ON")
         if self.read_only:
             return
@@ -155,6 +168,7 @@ class EventGraphStore:
         conn.execute("PRAGMA synchronous = NORMAL")
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
+        """Create tables and indexes when the database is empty."""
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version == 0:
             for stmt in CREATE_STATEMENTS:
@@ -166,6 +180,7 @@ class EventGraphStore:
 
     @contextlib.contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Context manager wrapping a ``BEGIN IMMEDIATE``/``COMMIT`` pair."""
         conn = self.connect()
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -186,6 +201,7 @@ class EventGraphStore:
         tags: str | None = None,
         conn: sqlite3.Connection | None = None,
     ) -> int:
+        """Insert or update a ``scenarios`` row and return its id."""
         now = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
         query = """
             INSERT INTO scenarios (section, source_path, sheet_name, start_node_label, ingested_at, tags)
@@ -222,6 +238,7 @@ class EventGraphStore:
         source_path: str | None = None,
         sheet_name: str | None = None,
     ) -> ScenarioInfo:
+        """Fetch a scenario row by primary key or unique tuple."""
         conn = self.connect()
         if scenario_id is not None:
             row = conn.execute("SELECT * FROM scenarios WHERE id = ?", (scenario_id,)).fetchone()
@@ -249,6 +266,7 @@ class EventGraphStore:
         )
 
     def list_scenarios(self, *, section: str | None = None) -> list[ScenarioInfo]:
+        """Return lightweight scenario metadata, optionally filtered by section."""
         conn = self.connect()
         if section:
             rows = conn.execute(
@@ -277,6 +295,7 @@ class EventGraphStore:
         *,
         conn: sqlite3.Connection | None = None,
     ) -> None:
+        """Delete rows from ``tables`` for a specific ``scenario_id``."""
         if conn is None:
             conn = self.connect()
         for table in tables:
@@ -291,6 +310,7 @@ class EventGraphStore:
         conn: sqlite3.Connection | None = None,
         replace: bool = True,
     ) -> None:
+        """Insert dataframe rows into ``table_name`` for ``scenario_id``."""
         if conn is None:
             conn = self.connect()
 
@@ -313,6 +333,7 @@ class EventGraphStore:
         conn.executemany(insert_sql, payload.itertuples(index=False, name=None))
 
     def read_dataframe(self, table_name: str, scenario_id: int) -> pd.DataFrame:
+        """Return a dataframe slice for ``scenario_id``."""
         query = f"SELECT * FROM {table_name} WHERE scenario_id = ?"
         df_sql = pd.read_sql_query(query, self.connect(), params=(scenario_id,))
         if "scenario_id" in df_sql.columns:
@@ -326,6 +347,7 @@ class EventGraphStore:
         *,
         conn: sqlite3.Connection | None = None,
     ) -> None:
+        """Persist graph nodes and edges for ``scenario_id``."""
         nodes_df, edges_df = serialize_graph(graph)
         if conn is None:
             with self.transaction() as tx_conn:
@@ -336,12 +358,14 @@ class EventGraphStore:
         self.write_dataframe("graph_edges", edges_df, scenario_id, conn=conn)
 
     def read_graph(self, scenario_id: int) -> nx.DiGraph:
+        """Reconstruct a NetworkX graph previously stored for ``scenario_id``."""
         nodes_df = self.read_dataframe("graph_nodes", scenario_id)
         edges_df = self.read_dataframe("graph_edges", scenario_id)
         return deserialize_graph(nodes_df, edges_df)
 
 
 def serialize_graph(graph: nx.DiGraph) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Convert a NetworkX graph into dataframe payloads."""
     node_rows = []
     for node_id, attrs in graph.nodes(data=True):
         faalpad_id, knoop_id = _split_node_id(node_id)
@@ -372,6 +396,7 @@ def serialize_graph(graph: nx.DiGraph) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def deserialize_graph(nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> nx.DiGraph:
+    """Create a NetworkX graph from serialized node/edge tables."""
     graph = nx.DiGraph()
     for row in nodes_df.itertuples(index=False):
         node_id = (int(row.faalpad_id), int(row.knoop_id))
@@ -391,6 +416,7 @@ def deserialize_graph(nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> nx.DiGr
 
 
 def _split_node_id(node_id: object) -> tuple[int, int]:
+    """Validate and split node identifiers stored as tuples."""
     if isinstance(node_id, tuple) and len(node_id) == 2:
         return int(node_id[0]), int(node_id[1])
     raise TypeError(f"Node identifiers must be ``(faalpad_id, knoop_id)`` tuples; got {node_id!r}")

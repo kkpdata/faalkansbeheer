@@ -45,7 +45,27 @@ class EventGraph(BaseModel, ABC):
         edge_attr: dict[str, str] | None = None,
         event_attr: dict[str, str] | None = None,
     ) -> tuple[Path, graphviz.Digraph]:
-        """Render the graph using Graphviz with wrapped labels."""
+        """Render the event graph using Graphviz with wrapped labels.
+
+        Parameters
+        ----------
+        wrap_width : int, default=28
+            Maximum number of characters per line for node labels.
+        output_path : str | Path, default="output/event_tree.png"
+            File path (without extension) used by Graphviz when writing the plot.
+        view : bool, default=False
+            When ``True`` the rendered file is opened using Graphviz' viewer.
+        water_level : float | None, default=None
+            Optional water level used to annotate Pf/Beta values on the nodes.
+        graph_attr, node_attr, edge_attr, event_attr : dict[str, str] | None
+            Optional Graphviz attribute overrides for the global graph, nodes,
+            edges, or event-style colours.
+
+        Returns
+        -------
+        tuple[Path, graphviz.Digraph]
+            Path to the rendered file and the Graphviz digraph instance.
+        """
         dot = self._build_graphviz(
             wrap_width=wrap_width,
             water_level=water_level,
@@ -72,7 +92,22 @@ class EventGraph(BaseModel, ABC):
         edge_attr: dict[str, str] | None,
         event_attr: dict[str, str] | None,
     ) -> graphviz.Digraph:
-        """Build a Graphviz Digraph with wrapped labels and event styling."""
+        """Create a Graphviz diagram matching the in-memory event graph.
+
+        Parameters
+        ----------
+        wrap_width : int
+            Maximum label line length.
+        water_level : float | None
+            Optional water level used to annotate Pf/Beta.
+        graph_attr, node_attr, edge_attr, event_attr : dict[str, str] | None
+            Attribute overrides for Graphviz entities.
+
+        Returns
+        -------
+        graphviz.Digraph
+            Populated diagram ready for rendering.
+        """
         base_graph_attr = {"rankdir": "LR", "nodesep": "0.6", "ranksep": "1.0"}
         base_node_attr = {
             "shape": "box",
@@ -144,7 +179,19 @@ class EventGraph(BaseModel, ABC):
         self,
         start_nodes: list[tuple[int, int]] | None = None,
     ) -> list[FailurePath]:
-        """Return all unique simple paths from ``start_nodes`` to every failure node."""
+        """Return all unique simple paths that terminate in failure nodes.
+
+        Parameters
+        ----------
+        start_nodes : list[tuple[int, int]] | None, default=None
+            Optional list of graph node identifiers to use as path sources.
+            When omitted, nodes with zero in-degree are treated as sources.
+
+        Returns
+        -------
+        list[FailurePath]
+            Sorted list of unique simple paths reaching failure nodes.
+        """
         if start_nodes is None:
             start_nodes = [node for node, indeg in self.graph.in_degree() if indeg == 0]
 
@@ -174,7 +221,22 @@ class EventGraph(BaseModel, ABC):
         start_nodes: list[tuple[int, int]] | None = None,
         start_node_pf: float = 1.0,
     ) -> list[FailurePathProbabilities]:
-        """Annotate each simple path with Pf values per node for the requested water level(s)."""
+        """Annotate each simple path with Pf and cumulative probabilities.
+
+        Parameters
+        ----------
+        water_levels : float | Sequence[float]
+            Single water level or array of levels where Pf/Beta should be evaluated.
+        start_nodes : list[tuple[int, int]] | None, default=None
+            Custom start nodes passed to :meth:`get_failure_paths`.
+        start_node_pf : float, default=1.0
+            Probability assigned to start nodes before multiplying downstream Pf.
+
+        Returns
+        -------
+        list[FailurePathProbabilities]
+            Failure paths decorated with per-node and cumulative probabilities.
+        """
         levels = np.atleast_1d(np.array(water_levels, dtype=float))
         if levels.ndim != 1 or levels.size == 0:
             raise ValueError("water_levels must be a non-empty scalar or 1D sequence")
@@ -209,5 +271,19 @@ class EventGraph(BaseModel, ABC):
 
     @staticmethod
     def _format_label(text: str, width: int) -> str:
+        """Wrap labels for Graphviz nodes.
+
+        Parameters
+        ----------
+        text : str
+            Label text to wrap.
+        width : int
+            Maximum characters per line.
+
+        Returns
+        -------
+        str
+            Wrapped label with newline separators.
+        """
         lines = textwrap.wrap(str(text), width=width) or [text]
         return "\n".join(lines)
