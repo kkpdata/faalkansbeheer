@@ -175,25 +175,26 @@ def test_integrator_matches_form_reference() -> None:
 
 def test_hazard_curve_validation() -> None:
     with pytest.raises(ValueError):
-        HazardCurve([1.0], [0.1])
+        HazardCurve([1.0], [0.8])
     with pytest.raises(ValueError):
-        HazardCurve([1.0, 0.5], [0.2, 0.8])
+        HazardCurve([1.0, 0.5], [0.8, 0.2])
     with pytest.raises(ValueError):
-        HazardCurve([1.0, 2.0], [0.8, 0.2])
+        HazardCurve([1.0, 2.0], [0.2, 0.8])
 
-    assert HazardCurve([1.0, 2.0], [0.2, 0.2])
-    assert HazardCurve([1.0, 2.0], [0.1, 0.9])
+    assert HazardCurve([1.0, 2.0], [0.9, 0.2])
+    assert HazardCurve([1.0, 2.0], [0.5, 0.5])
 
 
-def test_fragility_curve_validation_requires_matching_hazard() -> None:
-    hazard = HazardCurve([1.0, 2.0], [0.1, 0.9])
+def test_fragility_curve_validation_requires_sorted_inputs() -> None:
     with pytest.raises(ValueError):
-        FragilityCurve([1.0], [0.5], hazard)
+        FragilityCurve([1.0], [0.5])
+    with pytest.raises(ValueError):
+        FragilityCurve([1.0, 0.5], [0.0, 1.0])
 
 
 def test_hazard_integrator_matches_expected_pf_and_hazard_level() -> None:
-    hazard = HazardCurve([0.0, 1.0, 2.0, 3.0], [0.01, 0.1, 0.9, 0.99])
-    fragility = FragilityCurve([0.0, 1.0, 2.0, 3.0], [0.0, 0.2, 0.8, 1.0], hazard)
+    hazard = HazardCurve([0.0, 1.0, 2.0, 3.0], [0.99, 0.8, 0.3, 0.02])
+    fragility = FragilityCurve([0.0, 1.0, 2.0, 3.0], [-2.0, -0.5, 0.5, 1.2])
 
     config = IntegrationConfig(
         r_distribution=None,
@@ -216,8 +217,8 @@ def test_hazard_integrator_matches_expected_pf_and_hazard_level() -> None:
 
 
 def test_mixed_curve_and_distribution_inputs() -> None:
-    hazard = HazardCurve([0.0, 1.0, 2.0], [0.05, 0.4, 0.95])
-    fragility = FragilityCurve([0.0, 1.0, 2.0], [0.0, 0.5, 1.0], hazard)
+    hazard = HazardCurve([0.0, 1.0, 2.0], [0.95, 0.5, 0.05])
+    fragility = FragilityCurve([0.0, 1.0, 2.0], [-1.5, 0.0, 1.0])
 
     # Curve only for R, distribution for S
     config_fragility = IntegrationConfig(
@@ -244,7 +245,7 @@ def test_mixed_curve_and_distribution_inputs() -> None:
 
 
 def test_hazard_curve_beta_mapping_roundtrip() -> None:
-    hazard = HazardCurve([0.0, 2.0, 4.0], [0.05, 0.5, 0.95])
+    hazard = HazardCurve([0.0, 2.0, 4.0], [0.95, 0.5, 0.05])
     betas = hazard.beta_from_hazard([0.0, 4.0])
     reconstructed = hazard.hazard_from_beta(betas)
     assert np.allclose(reconstructed, [0.0, 4.0], atol=1e-6)
@@ -266,10 +267,12 @@ def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
     level_min = mu_s - 8 * sigma_s
     level_max = mu_s + 8 * sigma_s
     hazard_levels = np.linspace(level_min, level_max, 2001)
-    hazard_probs = np.array(hazard_dist.computeCDF(hazard_levels[:, np.newaxis])).flatten()
-    hazard_curve = HazardCurve(hazard_levels, hazard_probs)
-    fragility_probs = np.array(fragility_dist.computeCDF(hazard_levels[:, np.newaxis])).flatten()
-    fragility_curve = FragilityCurve(hazard_levels, fragility_probs, hazard_curve)
+    exceedance_probs = np.array(hazard_dist.computeSurvivalFunction(hazard_levels[:, np.newaxis])).flatten()
+    hazard_curve = HazardCurve(hazard_levels, exceedance_probs)
+
+    fragility_exceedance = np.array(fragility_dist.computeSurvivalFunction(hazard_levels[:, np.newaxis])).flatten()
+    beta_knots = np.array(ot.Normal().computeQuantile(fragility_exceedance, True)).flatten()
+    fragility_curve = FragilityCurve(hazard_levels, beta_knots)
 
     curve_config = IntegrationConfig(
         r_distribution=None,
@@ -307,8 +310,8 @@ def test_integration_grid_plot_smoke(tmp_path: Path) -> None:
 
 
 def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
-    hazard = HazardCurve([0.0, 1.0, 2.0], [0.05, 0.4, 0.95])
-    fragility = FragilityCurve([0.0, 1.0, 2.0], [0.0, 0.5, 1.0], hazard)
+    hazard = HazardCurve([0.0, 1.0, 2.0], [0.95, 0.4, 0.05])
+    fragility = FragilityCurve([0.0, 1.0, 2.0], [-1.5, 0.0, 1.0])
     config = IntegrationConfig(
         r_distribution=None,
         s_distribution=None,

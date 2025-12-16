@@ -9,11 +9,12 @@ from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 
 def _example_curves() -> tuple[HazardCurve, FragilityCurve]:
     hazard_levels = [0.0, 1.0, 2.0, 3.0]
-    cumulative_probs = [0.01, 0.2, 0.7, 0.98]
-    hazard = HazardCurve(hazard_levels, cumulative_probs)
+    exceedance_probs = [0.99, 0.8, 0.3, 0.02]
+    hazard = HazardCurve(hazard_levels, exceedance_probs)
 
-    fragility_probs = [0.0, 0.1, 0.6, 0.95]
-    fragility = FragilityCurve(hazard_levels, fragility_probs, hazard)
+    # Select beta knots directly (monotone)
+    beta_knots = [-1.5, -0.3, 0.5, 1.3]
+    fragility = FragilityCurve(hazard_levels, beta_knots)
     return hazard, fragility
 
 
@@ -36,13 +37,7 @@ def test_fragility_distribution_matches_curve() -> None:
 
     test_levels = np.linspace(fragility.hazard_levels[0], fragility.hazard_levels[-1], 5)
     cdf_vals = np.array(distribution.computeCDF(test_levels[:, np.newaxis])).reshape(test_levels.shape)
-    expected = np.interp(
-        test_levels,
-        fragility.hazard_levels,
-        fragility.failure_probs,
-        left=fragility.failure_probs[0],
-        right=fragility.failure_probs[-1],
-    )
+    expected = fragility.cdf(test_levels)
     assert np.allclose(cdf_vals, expected)
 
     quantile_probs = np.array([0.05, 0.4, 0.8])
