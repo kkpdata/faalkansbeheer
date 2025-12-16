@@ -17,8 +17,8 @@ class LinearInterpolator:
 
     Notes
     -----
-    * Inputs are copied, flattened, and stably sorted so callers may pass
-      unsorted knots without caring about their original ordering.
+    * Inputs are copied and flattened, but sorting is assumed to be done by the
+      caller
     * Duplicate ``x`` values (plateaus) are preserved and therefore still
       map to the *last* ``y`` value at that level when querying exactly on
       the plateau. This is achieved by composing two SciPy interpolants:
@@ -41,10 +41,6 @@ class LinearInterpolator:
             raise ValueError("x and y must have identical lengths.")
         if x_arr.size < 2:
             raise ValueError("At least two points are required for interpolation.")
-
-        order = np.argsort(x_arr, kind="mergesort")
-        x_arr = x_arr[order]
-        y_arr = y_arr[order]
 
         if np.any(np.diff(x_arr) < 0):
             raise ValueError("x values must be non-decreasing.")
@@ -83,6 +79,7 @@ class LinearInterpolator:
         query = np.asarray(x_query, dtype=float)
         with np.errstate(divide="ignore"):
             result = self._interp(query)
+
         if is_scalar:
             value = float(result)
             if np.isnan(value):
@@ -114,5 +111,6 @@ class LinearInterpolator:
         np.ndarray | float
             Interpolated ``x`` values.
         """
+        # @TODO
         inverse_interp = LinearInterpolator(self._y_nodes, self._x_nodes)
         return inverse_interp.value(y_query)

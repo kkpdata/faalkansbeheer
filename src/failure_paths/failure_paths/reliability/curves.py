@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 import numpy as np
@@ -8,22 +9,23 @@ import openturns as ot
 from ..common.interp import LinearInterpolator
 
 
-class _BetaCurveBase:
+class _BetaCurveBase(ABC):
     """Shared helper for hazard/fragility curves storing beta/level interpolators."""
 
-    def __init__(self, hazard_levels: Sequence[float], betas: Sequence[float]) -> None:
+    def __init__(self) -> None:
+        self.std_normal = ot.Normal()
+
+    @abstractmethod
+    def set_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
+        pass
+
+    def _validate_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
         if len(hazard_levels) < 2:
             raise ValueError("At least two points are required to build a curve.")
         if len(hazard_levels) != len(betas):
             raise ValueError("hazard_levels and betas must have the same length.")
         if np.any(np.diff(hazard_levels) <= 0):
             raise ValueError("hazard_levels must be strictly increasing.")
-
-        self.std_normal = ot.Normal()
-        self.hazard_levels = np.asarray(hazard_levels, dtype=float)
-        self.beta_knots = np.asarray(betas, dtype=float)
-        self._level_from_beta = LinearInterpolator(self.beta_knots, self.hazard_levels)
-        self._beta_from_level = LinearInterpolator(self.hazard_levels, self.beta_knots)
 
     def probabilities_to_beta(self, probs: np.ndarray | float, tail: bool = False) -> np.ndarray:
         probs_arr = np.asarray(probs, dtype=float)
@@ -78,12 +80,21 @@ class HazardCurve(_BetaCurveBase):
         hazard_levels: Sequence[float],
         exceedance_probs: Sequence[float],
     ) -> None:
+        super().__init__()
+        self.set_levels(hazard_levels, exceedance_probs)
+
+    def set_levels(self, hazard_levels: Sequence[float], exceedance_probs: Sequence[float]):
         probs = np.asarray(exceedance_probs, dtype=float)
         probs = np.clip(probs, 0, 1)
         if np.any(np.diff(probs) > 0):
             raise ValueError("exceedance_probs must be non-increasing.")
-        betas = np.array(ot.Normal().computeQuantile(probs, True)).flatten()
-        super().__init__(hazard_levels, betas)
+        betas = np.array(self.std_normal.computeQuantile(probs, True)).reshape(probs.shape)
+
+        self._validate_levels(hazard_levels, betas)
+        self.hazard_levels = np.asarray(hazard_levels, dtype=float)
+        self.beta_knots = np.asarray(betas, dtype=float)
+        self._level_from_beta = LinearInterpolator(self.beta_knots, self.hazard_levels)
+        self._beta_from_level = LinearInterpolator(self.hazard_levels, self.beta_knots)
 
 
 class FragilityCurve(_BetaCurveBase):
@@ -94,4 +105,12 @@ class FragilityCurve(_BetaCurveBase):
         hazard_levels: Sequence[float],
         betas: Sequence[float],
     ) -> None:
-        super().__init__(hazard_levels, betas)
+        super().__init__()
+        self.set_levels(hazard_levels, betas)
+
+    def set_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
+        self._validate_levels(hazard_levels, betas)
+        self.hazard_levels = np.asarray(hazard_levels, dtype=float)
+        self.beta_knots = np.asarray(betas, dtype=float)
+        self._level_from_beta = LinearInterpolator(self.beta_knots[::-1], self.hazard_levels[::-1])
+        self._beta_from_level = LinearInterpolator(self.hazard_levels, self.beta_knots)
