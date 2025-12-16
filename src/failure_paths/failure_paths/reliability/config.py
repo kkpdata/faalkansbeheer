@@ -17,10 +17,10 @@ class IntegrationConfig(BaseModel):
     s_distribution: Any | None = Field(None, description="Distribution of solicitation S")
     threshold: float = Field(0.0, description="Failure threshold for the limit-state function.")
 
-    u_min: float = Field(-8.0, description="Lower bound of the U-space integration range.")
-    u_max: float = Field(8.0, description="Upper bound of the U-space integration range.")
-    coarse_points: int = Field(65, ge=2, description="Number of U-grid edges (>=2).")
-    refine_factor: int = Field(4, ge=1, description="Per-dimension subdivision factor for mixed cells.")
+    u_min: float = Field(-10.0, description="Lower bound of the U-space integration range.")
+    u_max: float = Field(10.0, description="Upper bound of the U-space integration range.")
+    coarse_points: int = Field(101, ge=2, description="Number of U-grid edges (>=2).")
+    refine_factor: int = Field(20, ge=1, description="Per-dimension subdivision factor for mixed cells.")
 
     std_normal: ot.Normal = Field(default_factory=ot.Normal)
     hazard_curve: HazardCurve | None = Field(

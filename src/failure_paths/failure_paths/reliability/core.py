@@ -108,13 +108,119 @@ class ReliabilityIntegrator:
         if u1_arr.shape != u2_arr.shape:
             raise ValueError("u1 and u2 must share the same shape for evaluation.")
 
-        probs_r = self.standard_normal_cdf(u1_arr.reshape(-1))
-        probs_s = self.standard_normal_cdf(u2_arr.reshape(-1))
+        r_vals = self._map_u_to_distribution(u1_arr, self.r_distribution)
+        s_vals = self._map_u_to_distribution(u2_arr, self.s_distribution)
 
-        r_vals = np.array(self.r_distribution.computeQuantile(probs_r)).flatten()
-        s_vals = np.array(self.s_distribution.computeQuantile(probs_s)).flatten()
+        return r_vals - s_vals
 
-        return (r_vals - s_vals).reshape(u1_arr.shape)
+    def _map_u_to_distribution(
+        self,
+        u_values: np.ndarray,
+        dist: ot.Distribution,
+        u_values_cdf: np.ndarray | None = None,
+        u_values_survival: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Map U-space coordinates to physical values for the given distribution."""
+        arr = np.asarray(u_values)
+        need_cdf = u_values_cdf is None
+        need_survival = u_values_survival is None
+        if need_cdf or need_survival:
+            cdf_vals, survival_vals = self._normal_probabilities(
+                arr,
+                compute_cdf=need_cdf,
+                compute_survival=need_survival,
+            )
+            if need_cdf:
+                u_values_cdf = cdf_vals
+            if need_survival:
+                u_values_survival = survival_vals
+
+        flat_u = arr.reshape(-1)
+        flat_cdf = np.asarray(u_values_cdf).reshape(-1)
+        flat_survival = np.asarray(u_values_survival).reshape(-1)
+        quantiles = np.empty_like(flat_cdf, dtype=float)
+
+        lower_mask = flat_u <= 0
+        upper_mask = ~lower_mask
+
+        if np.any(lower_mask):
+            lower_vals = np.array(dist.computeQuantile(flat_cdf[lower_mask])).flatten()
+            quantiles[lower_mask] = lower_vals
+
+        if np.any(upper_mask):
+            upper_vals = np.array(dist.computeQuantile(flat_survival[upper_mask], True)).flatten()
+            quantiles[upper_mask] = upper_vals
+
+        return quantiles.reshape(arr.shape)
+
+    def _normal_probabilities(
+        self,
+        u_values: np.ndarray,
+        compute_cdf: bool = True,
+        compute_survival: bool = True,
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Return lower-tail CDF and upper-tail survival probabilities for U values."""
+        arr = np.asarray(u_values)
+        flat = arr.reshape(-1)
+        cdf = None
+        survival = None
+
+        if compute_cdf:
+            cdf_vals = np.array(self.std_normal.computeCDF(flat[:, np.newaxis])).flatten()
+            cdf = cdf_vals.reshape(arr.shape)
+
+        if compute_survival:
+            surv_vals = np.array(self.std_normal.computeCDF((-flat)[:, np.newaxis])).flatten()
+            survival = surv_vals.reshape(arr.shape)
+
+        return cdf, survival
+
+    def _u_interval_probabilities(
+        self,
+        edges: np.ndarray,
+        edges_cdf: np.ndarray | None = None,
+        edges_survival: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Compute standard-normal probabilities for intervals defined by `edges`."""
+        arr = np.asarray(edges)
+        need_cdf = edges_cdf is None
+        need_survival = edges_survival is None
+        if need_cdf or need_survival:
+            computed_cdf, computed_survival = self._normal_probabilities(
+                arr,
+                compute_cdf=need_cdf,
+                compute_survival=need_survival,
+            )
+            if need_cdf:
+                edges_cdf = computed_cdf
+            if need_survival:
+                edges_survival = computed_survival
+
+        left = arr[..., :-1]
+        right = arr[..., 1:]
+        cdf_left = edges_cdf[..., :-1]
+        cdf_right = edges_cdf[..., 1:]
+        surv_left = edges_survival[..., :-1]
+        surv_right = edges_survival[..., 1:]
+
+        probs = np.empty_like(left, dtype=float)
+
+        neg_mask = right <= 0
+        pos_mask = left >= 0
+        cross_mask = ~(neg_mask | pos_mask)
+
+        if np.any(neg_mask):
+            probs[neg_mask] = cdf_right[neg_mask] - cdf_left[neg_mask]
+        if np.any(pos_mask):
+            probs[pos_mask] = surv_left[pos_mask] - surv_right[pos_mask]
+        if np.any(cross_mask):
+            zero_cdf = 0.5
+            zero_survival = 0.5
+            neg_part = zero_cdf - cdf_left[cross_mask]
+            pos_part = zero_survival - surv_right[cross_mask]
+            probs[cross_mask] = neg_part + pos_part
+
+        return probs
 
     def run(self) -> IntegrationResult:
         """Execute the integration workflow and post-process failure samples."""
@@ -140,11 +246,26 @@ class ReliabilityIntegrator:
         cfg = self.config
         u_edges = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
         u_centers = 0.5 * (u_edges[1:] + u_edges[:-1])
-        u_edges_cdf = self.standard_normal_cdf(u_edges)
-        u_contrib = np.diff(u_edges_cdf)
 
-        r_edges = np.array(self.r_distribution.computeQuantile(u_edges_cdf)).flatten()
-        s_edges = np.array(self.s_distribution.computeQuantile(u_edges_cdf)).flatten()
+        u_edges_cdf, u_edges_survival = self._normal_probabilities(u_edges)
+        u_contrib = self._u_interval_probabilities(u_edges, u_edges_cdf, u_edges_survival)
+        total_contrib = float(u_contrib.sum())
+        if total_contrib <= 0.0:
+            raise RuntimeError("Invalid U-grid configuration produced non-positive probability mass.")
+        u_contrib = u_contrib / total_contrib
+
+        r_edges = self._map_u_to_distribution(
+            u_edges,
+            self.r_distribution,
+            u_values_cdf=u_edges_cdf,
+            u_values_survival=u_edges_survival,
+        )
+        s_edges = self._map_u_to_distribution(
+            u_edges,
+            self.s_distribution,
+            u_values_cdf=u_edges_cdf,
+            u_values_survival=u_edges_survival,
+        )
 
         r_min = r_edges[:-1][:, None]
         r_max = r_edges[1:][:, None]
@@ -183,11 +304,11 @@ class ReliabilityIntegrator:
             u1_sub_edges = u1_left[:, None] + (u1_right - u1_left)[:, None] * frac_edges
             u2_sub_edges = u2_left[:, None] + (u2_right - u2_left)[:, None] * frac_edges
 
-            cdf_u1_sub = self.standard_normal_cdf(u1_sub_edges.reshape(-1)).reshape(-1, refine_factor + 1)
-            cdf_u2_sub = self.standard_normal_cdf(u2_sub_edges.reshape(-1)).reshape(-1, refine_factor + 1)
+            cdf_u1_sub, surv_u1_sub = self._normal_probabilities(u1_sub_edges)
+            cdf_u2_sub, surv_u2_sub = self._normal_probabilities(u2_sub_edges)
 
-            sub_prob_u1 = np.diff(cdf_u1_sub, axis=1)
-            sub_prob_u2 = np.diff(cdf_u2_sub, axis=1)
+            sub_prob_u1 = self._u_interval_probabilities(u1_sub_edges, cdf_u1_sub, surv_u1_sub)
+            sub_prob_u2 = self._u_interval_probabilities(u2_sub_edges, cdf_u2_sub, surv_u2_sub)
             sub_weights = sub_prob_u1[:, :, None] * sub_prob_u2[:, None, :]
 
             u1_sub_centers = u1_left[:, None] + (u1_right - u1_left)[:, None] * frac_centers

@@ -28,7 +28,7 @@ def _quantile_result(values: np.ndarray, was_scalar: bool) -> ot.Point | ot.Samp
     """Wrap numpy outputs into OpenTURNS Point/Sample containers."""
     if was_scalar:
         return ot.Point([float(values[0])])
-    return ot.Sample([[float(v)] for v in values])
+    return ot.Sample(values[:, np.newaxis])
 
 
 class HazardDerivedDistribution(ot.PythonDistribution):

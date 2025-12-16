@@ -68,9 +68,9 @@ def test_integrator_matches_analytic_pf() -> None:
         r_distribution=ot.Normal(mu_r, sigma_r),
         s_distribution=ot.Normal(mu_s, sigma_s),
         coarse_points=101,
-        refine_factor=10,
-        u_min=-8.0,
-        u_max=8.0,
+        refine_factor=20,
+        u_min=-10.0,
+        u_max=10.0,
     )
     integrator = ReliabilityIntegrator(config=config)
     result = integrator.run()
@@ -90,9 +90,9 @@ def test_integrator_matches_dirac_solicitation() -> None:
         r_distribution=ot.Normal(mu_r, sigma_r),
         s_distribution=ot.Dirac(s_level),
         coarse_points=101,
-        refine_factor=10,
-        u_min=-8.0,
-        u_max=8.0,
+        refine_factor=20,
+        u_min=-10.0,
+        u_max=10.0,
     )
     result = ReliabilityIntegrator(config=config).run()
 
@@ -100,7 +100,7 @@ def test_integrator_matches_dirac_solicitation() -> None:
     # analytic_beta = ot.Normal().computeQuantile(analytic_pf, True)[0]
     analytic_beta = (mu_r - s_level) / sigma_r
 
-    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-5, abs_tol=0)
+    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-12, abs_tol=0)
 
 
 def test_integrator_matches_dirac_resistance() -> None:
@@ -110,9 +110,9 @@ def test_integrator_matches_dirac_resistance() -> None:
         r_distribution=ot.Dirac(r_level),
         s_distribution=ot.Normal(mu_s, sigma_s),
         coarse_points=101,
-        refine_factor=10,
-        u_min=-8.0,
-        u_max=8.0,
+        refine_factor=20,
+        u_min=-10.0,
+        u_max=10.0,
     )
     result = ReliabilityIntegrator(config=config).run()
 
@@ -121,7 +121,7 @@ def test_integrator_matches_dirac_resistance() -> None:
     analytic_beta = ot.Normal().computeQuantile(analytic_pf, True)[0]
     analytic_beta = (r_level - mu_s) / sigma_s
 
-    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-2, abs_tol=0)
+    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-12, abs_tol=0)
 
 
 def test_failure_samples_diagnostics_match_weights() -> None:
@@ -200,8 +200,10 @@ def test_hazard_integrator_matches_expected_pf_and_hazard_level() -> None:
         s_distribution=None,
         hazard_curve=hazard,
         fragility_curve=fragility,
-        coarse_points=201,
-        refine_factor=1,
+        coarse_points=101,
+        refine_factor=20,
+        u_min=-10.0,
+        u_max=10.0,
     )
     integrator = ReliabilityIntegrator(config=config)
     result = integrator.run()
