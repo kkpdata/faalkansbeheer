@@ -17,7 +17,7 @@ class PathSchema(pa.DataFrameModel):
     Overslag: Series[str] = pa.Field(coerce=True, isin=["ja", "nee"])
     Indirect_mechanisme: Series[str] = pa.Field(coerce=True)
     Initiele_gebeurtenis: Series[str] = pa.Field(coerce=True)
-    Vervolggebeurtenis_1: Series[str] = pa.Field(coerce=True)
+    Vervolggebeurtenis_1: Series[str] = pa.Field(coerce=True, nullable=True)
     Vervolggebeurtenis_2: Series[str] = pa.Field(coerce=True, nullable=True)
     Vervolggebeurtenis_3: Series[str] = pa.Field(coerce=True, nullable=True)
     Vervolggebeurtenis_4: Series[str] = pa.Field(coerce=True, nullable=True)

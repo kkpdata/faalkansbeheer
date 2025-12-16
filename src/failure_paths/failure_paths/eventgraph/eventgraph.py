@@ -254,7 +254,8 @@ class EventGraph(BaseModel, ABC):
                 else:
                     prob_matrix[:, idx] = self.graph_events.get_event_probs(nid, levels, as_beta=False)
 
-            cum_prob_matrix = np.log(prob_matrix, out=np.zeros_like(prob_matrix), where=prob_matrix > 0)
+            with np.errstate(divide="ignore"):
+                cum_prob_matrix = np.log(prob_matrix)
             cum_prob_matrix = np.cumsum(cum_prob_matrix, axis=1)
             cum_prob_matrix = np.exp(cum_prob_matrix)
 

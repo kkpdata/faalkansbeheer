@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import ClassVar
 
 import numpy as np
+import openturns as ot
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import Series
-from scipy.stats import norm
 
 from ...common.interp import LinearInterpolator
 from .table_model import TableModel
@@ -35,6 +35,7 @@ class EventTable(TableModel):
     )
     schema_model: ClassVar[type[pa.DataFrameModel]] = EventSchema
     index_columns: ClassVar[tuple[str, ...]] = ("Faalpad_ID", "Knoop_ID")
+    std_normal: ClassVar[ot.Normal] = ot.Normal()
 
     def get_event_ids(self) -> set[tuple[int, int]]:
         """Return the distinct ``(Faalpad_ID, Knoop_ID)`` combinations in the table."""
@@ -97,7 +98,7 @@ class EventTable(TableModel):
             interp_vals = interpolator.value(h_array)
 
         if not as_beta:
-            interp_vals = norm.sf(interp_vals)
+            interp_vals = np.array(self.std_normal.computeCDF(-interp_vals[:, np.newaxis])).reshape(interp_vals.shape)
 
         return interp_vals
 
@@ -120,9 +121,9 @@ class EventTable(TableModel):
         mask = beta.isna()
         if not mask.any():
             return beta
-        values = pf.loc[mask].astype(float)
+        values = pf.loc[mask].astype(float).to_numpy()
         beta_filled = beta.astype(float)
-        beta_filled.loc[mask] = norm.isf(values)
+        beta_filled.loc[mask] = -1 * np.array(cls.std_normal.computeQuantile(values)).reshape(values.shape)
 
         # Replace inf values
         beta_filled.loc[np.isposinf(beta_filled)] = 9999999.9
@@ -149,9 +150,10 @@ class EventTable(TableModel):
         mask = pf.isna()
         if not mask.any():
             return pf
-        values = beta.loc[mask].astype(float)
+        values = beta.loc[mask].astype(float).to_numpy(dtype=float)
         pf_filled = pf.astype(float)
-        pf_filled.loc[mask] = norm.sf(values)
+        pf_values = np.array(cls.std_normal.computeCDF((-values)[:, np.newaxis])).reshape(values.shape)
+        pf_filled.loc[mask] = pf_values
         return pf_filled
 
     @classmethod
