@@ -47,6 +47,13 @@ class _BetaCurveBase:
         probs = np.array(self.std_normal.computeCDF(flat[:, np.newaxis]))
         return probs.reshape(hazard_arr.shape)
 
+    def survival(self, hazard: np.ndarray | float) -> np.ndarray:
+        hazard_arr = np.asarray(hazard, dtype=float)
+        beta_vals = self._beta_from_level.value(hazard_arr)
+        flat = beta_vals.flatten()
+        probs = np.array(self.std_normal.computeSurvivalFunction(flat[:, np.newaxis]))
+        return probs.reshape(hazard_arr.shape)
+
     def quantile(self, prob: np.ndarray | float, tail: bool = False) -> np.ndarray:
         prob_arr = np.asarray(prob, dtype=float)
         beta_values = self.probabilities_to_beta(prob_arr, tail=tail)

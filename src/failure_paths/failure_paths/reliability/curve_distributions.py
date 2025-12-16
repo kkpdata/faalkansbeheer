@@ -24,6 +24,10 @@ class HazardDerivedDistribution(ot.PythonDistribution):
         """Evaluate the hazard CDF at one or more levels."""
         return self.hazard_curve.cdf(x)
 
+    def computeSurvivalFunction(self, x: float | np.ndarray) -> float | np.ndarray:
+        """Evaluate the survival probability ``1 - CDF`` at one or more levels."""
+        return self.hazard_curve.survival(x)
+
     def computeQuantile(self, p: float | np.ndarray, tail: bool = False) -> ot.Point | ot.Sample:
         """Return hazard levels corresponding to the requested probabilities."""
         return self.hazard_curve.quantile(p, tail)
@@ -52,6 +56,10 @@ class FragilityDerivedDistribution(ot.PythonDistribution):
     def computeCDF(self, x: float | np.ndarray) -> float | np.ndarray:
         """Evaluate the cumulative failure probability at hazard levels."""
         return self.fragility_curve.cdf(x)
+
+    def computeSurvivalFunction(self, x: float | np.ndarray) -> float | np.ndarray:
+        """Evaluate the survival probability ``1 - CDF`` at hazard levels."""
+        return self.fragility_curve.survival(x)
 
     def computeQuantile(self, p: float | np.ndarray, tail: bool = False) -> ot.Point | ot.Sample:
         """Return hazard levels whose conditional failure probability equals ``p``."""

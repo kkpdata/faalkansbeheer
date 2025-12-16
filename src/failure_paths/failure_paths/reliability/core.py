@@ -407,10 +407,29 @@ class ReliabilityIntegrator:
         np.ndarray
             Matching U-space values for the solicitation axis that satisfy ``r - s = 0``.
         """
-        probs_r = self.standard_normal_cdf(u_values)
-        r_vals = np.array(self.r_distribution.computeQuantile(probs_r)).flatten()
+        u_values = np.asarray(u_values, dtype=float)
+        cdf_u, survival_u = self._normal_probabilities(u_values, compute_cdf=True, compute_survival=True)
+        r_vals = self._map_u_to_distribution(
+            u_values,
+            self.r_distribution,
+            u_values_cdf=cdf_u,
+            u_values_survival=survival_u,
+        )
+
         s_cdf = np.array(self.s_distribution.computeCDF(r_vals[:, np.newaxis])).flatten()
-        u2_vals = np.array(self.std_normal.computeQuantile(s_cdf)).flatten()
+        s_survival = np.array(self.s_distribution.computeSurvivalFunction(r_vals[:, np.newaxis])).flatten()
+
+        u2_vals = np.empty_like(s_cdf, dtype=float)
+        lower_mask = s_cdf <= 0.5
+
+        if np.any(lower_mask):
+            lprobs = s_cdf[lower_mask]
+            u2_vals[lower_mask] = np.array(self.std_normal.computeQuantile(lprobs)).reshape(lprobs.shape)
+
+        if np.any(~lower_mask):
+            uprobs = s_survival[~lower_mask]
+            u2_vals[~lower_mask] = np.array(self.std_normal.computeQuantile(uprobs, True)).reshape(uprobs.shape)
+
         return u2_vals
 
     # Distribution-based implementation
