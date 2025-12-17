@@ -137,6 +137,13 @@ class IntegrationGridPlotter:
             Patch(facecolor=safe_color, edgecolor="black", label="Safe"),
             Line2D([0], [0], color="black", linewidth=1.4, label="z = 0"),
         ]
-        ax.legend(handles=handles, loc="upper right")
+        ax.legend(
+            handles=handles,
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            borderaxespad=0.0,
+        )
+
+        fig.tight_layout()
 
         return fig, ax
