@@ -114,3 +114,24 @@ class FragilityCurve(_BetaCurveBase):
         self.beta_knots = np.asarray(betas, dtype=float)
         self._level_from_beta = LinearInterpolator(self.beta_knots[::-1], self.hazard_levels[::-1])
         self._beta_from_level = LinearInterpolator(self.hazard_levels, self.beta_knots)
+
+    def probabilities_to_beta(self, probs: np.ndarray | float, tail: bool = False) -> np.ndarray:
+        """Interpret probabilities as Pf (lower tail) or 1-Pf (upper tail)."""
+        prob_arr = np.asarray(probs, dtype=float)
+        base = super().probabilities_to_beta(prob_arr, tail=False)
+        if tail:
+            return base
+        return -base.reshape(prob_arr.shape)
+
+    def beta_to_probabilities(self, beta: np.ndarray | float) -> np.ndarray:
+        """Return conditional failure probabilities Pf = Φ(-β)."""
+        beta_arr = np.asarray(beta, dtype=float)
+        return super().beta_to_probabilities(-beta_arr)
+
+    def cdf(self, hazard: np.ndarray | float) -> np.ndarray:
+        """CDF equals Pf = Φ(-β)."""
+        return super().survival(hazard)
+
+    def survival(self, hazard: np.ndarray | float) -> np.ndarray:
+        """Survival equals 1 - Pf = Φ(β)."""
+        return super().cdf(hazard)

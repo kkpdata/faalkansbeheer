@@ -13,7 +13,7 @@ def _example_curves() -> tuple[HazardCurve, FragilityCurve]:
     hazard = HazardCurve(hazard_levels, exceedance_probs)
 
     # Select beta knots directly (monotone)
-    beta_knots = [-1.5, -0.3, 0.5, 1.3]
+    beta_knots = [1.3, 0.5, -0.3, -1.5]
     fragility = FragilityCurve(hazard_levels, beta_knots)
     return hazard, fragility
 
@@ -32,7 +32,7 @@ def test_hazard_distribution_matches_curve() -> None:
 
 
 def test_fragility_distribution_matches_curve() -> None:
-    hazard, fragility = _example_curves()
+    _, fragility = _example_curves()
     distribution = FragilityDerivedDistribution(fragility)
 
     test_levels = np.linspace(fragility.hazard_levels[0], fragility.hazard_levels[-1], 5)

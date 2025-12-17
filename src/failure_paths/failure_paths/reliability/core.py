@@ -316,8 +316,10 @@ class ReliabilityIntegrator:
             u_values_survival=u_edges_survival,
         )
 
+        # For monotonically increasing quantile mappings, each cell spans [edge_i, edge_{i+1}]
         r_min = r_edges[:-1][:, None]
         r_max = r_edges[1:][:, None]
+
         s_min = s_edges[:-1][None, :]
         s_max = s_edges[1:][None, :]
 
@@ -418,6 +420,8 @@ class ReliabilityIntegrator:
 
         s_cdf = np.array(self.s_distribution.computeCDF(r_vals[:, np.newaxis])).flatten()
         s_survival = np.array(self.s_distribution.computeSurvivalFunction(r_vals[:, np.newaxis])).flatten()
+        s_cdf = np.clip(s_cdf, 1e-300, 1)
+        s_survival = np.clip(s_survival, 1e-300, 1)
 
         u2_vals = np.empty_like(s_cdf, dtype=float)
         lower_mask = s_cdf <= 0.5

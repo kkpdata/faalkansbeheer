@@ -194,7 +194,7 @@ def test_fragility_curve_validation_requires_sorted_inputs() -> None:
 
 def test_hazard_integrator_matches_expected_pf_and_hazard_level() -> None:
     hazard = HazardCurve([0.0, 1.0, 2.0, 3.0], [0.99, 0.8, 0.3, 0.02])
-    fragility = FragilityCurve([0.0, 1.0, 2.0, 3.0], [-2.0, -0.5, 0.5, 1.2])
+    fragility = FragilityCurve([0.0, 1.0, 2.0, 3.0], [1.2, 0.5, -0.5, -2.0])
 
     config = IntegrationConfig(
         r_distribution=None,
@@ -218,7 +218,7 @@ def test_hazard_integrator_matches_expected_pf_and_hazard_level() -> None:
 
 def test_mixed_curve_and_distribution_inputs() -> None:
     hazard = HazardCurve([0.0, 1.0, 2.0], [0.95, 0.5, 0.05])
-    fragility = FragilityCurve([0.0, 1.0, 2.0], [-1.5, 0.0, 1.0])
+    fragility = FragilityCurve([0.0, 1.0, 2.0], [1.0, 0.0, -1.5])
 
     # Curve only for R, distribution for S
     config_fragility = IntegrationConfig(
@@ -254,24 +254,34 @@ def test_hazard_curve_beta_mapping_roundtrip() -> None:
 def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
     mu_r, sigma_r = 2.5, 0.8
     mu_s, sigma_s = 0.5, 0.9
+    s_factor = 10
     dist_config = IntegrationConfig(
         r_distribution=ot.Normal(mu_r, sigma_r),
         s_distribution=ot.Normal(mu_s, sigma_s),
         coarse_points=101,
         refine_factor=10,
+        u_min=-s_factor,
+        u_max=s_factor,
     )
     dist_result = ReliabilityIntegrator(config=dist_config).run()
 
     hazard_dist = ot.Normal(mu_s, sigma_s)
     fragility_dist = ot.Normal(mu_r, sigma_r)
-    level_min = mu_s - 8 * sigma_s
-    level_max = mu_s + 8 * sigma_s
-    hazard_levels = np.linspace(level_min, level_max, 2001)
+    level_min = mu_s - s_factor * sigma_s
+    level_max = mu_s + s_factor * sigma_s
+    hazard_levels = np.linspace(level_min, level_max, 1010)
     exceedance_probs = np.array(hazard_dist.computeSurvivalFunction(hazard_levels[:, np.newaxis])).flatten()
-    hazard_curve = HazardCurve(hazard_levels, exceedance_probs)
+    hazard_curve = HazardCurve(hazard_levels, exceedance_probs=exceedance_probs)
 
-    fragility_exceedance = np.array(fragility_dist.computeSurvivalFunction(hazard_levels[:, np.newaxis])).flatten()
-    beta_knots = np.array(ot.Normal().computeQuantile(fragility_exceedance, True)).flatten()
+    level_min = mu_r - s_factor * sigma_r
+    level_max = mu_r + s_factor * sigma_r
+    hazard_levels = np.linspace(level_min, level_max, 1010)
+    low_mask = hazard_levels <= mu_r
+    cdf_vals = np.array(fragility_dist.computeCDF(hazard_levels[:, np.newaxis])).flatten()
+    sur_vals = np.array(fragility_dist.computeSurvivalFunction(hazard_levels[:, np.newaxis])).flatten()
+    beta_knots = np.empty_like(hazard_levels)
+    beta_knots[low_mask] = np.array(ot.Normal().computeQuantile(cdf_vals[low_mask], True)).flatten()
+    beta_knots[~low_mask] = np.array(ot.Normal().computeQuantile(sur_vals[~low_mask])).flatten()
     fragility_curve = FragilityCurve(hazard_levels, beta_knots)
 
     curve_config = IntegrationConfig(
@@ -311,7 +321,7 @@ def test_integration_grid_plot_smoke(tmp_path: Path) -> None:
 
 def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
     hazard = HazardCurve([0.0, 1.0, 2.0], [0.95, 0.4, 0.05])
-    fragility = FragilityCurve([0.0, 1.0, 2.0], [-1.5, 0.0, 1.0])
+    fragility = FragilityCurve([0.0, 1.0, 2.0], [1.0, 0.0, -1.5])
     config = IntegrationConfig(
         r_distribution=None,
         s_distribution=None,
