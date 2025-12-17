@@ -98,7 +98,8 @@ class EventTable(TableModel):
             interp_vals = interpolator.value(h_array)
 
         if not as_beta:
-            interp_vals = np.array(self.std_normal.computeCDF(-interp_vals[:, np.newaxis])).reshape(interp_vals.shape)
+            interp_vals = np.array(self.std_normal.computeSurvivalFunction(interp_vals[:, np.newaxis]))
+            interp_vals = interp_vals.reshape(h_array.shape)
 
         return interp_vals
 
