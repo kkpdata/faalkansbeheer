@@ -279,6 +279,16 @@ class ReliabilityIntegrator:
     def integrate_failure_samples(self) -> FailureSamples:
         """Generate failure point samples using the configured U-grid."""
         samples = self._integrate_distributions()
+        if samples.points.size > 0:
+            u_s = samples.points[:, 1]
+            cdf_vals, surv_vals = self._normal_probabilities(u_s, compute_cdf=True, compute_survival=True)
+            solicitation_levels = self._map_u_to_distribution(
+                u_s,
+                self.s_distribution,
+                u_values_cdf=cdf_vals,
+                u_values_survival=surv_vals,
+            )
+            samples.solicitation_levels = solicitation_levels
         if self._using_curve_distributions and samples.points.size > 0 and self.config.hazard_curve is not None:
             beta_vals = samples.points[:, 1]
             samples.hazard_levels = self.config.hazard_curve.hazard_from_beta(beta_vals)

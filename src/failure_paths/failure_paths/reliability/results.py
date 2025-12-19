@@ -15,6 +15,7 @@ class FailureSamples:
     refined_fail_cells: int = 0
     mixed_cells: int = 0
     hazard_levels: np.ndarray | None = None
+    solicitation_levels: np.ndarray | None = None
 
     def __repr__(self) -> str:
         """Summarize weights and diagnostics."""
@@ -78,7 +79,13 @@ class IntegrationResult:
             data["failure_points"] = self.failure_samples.points.tolist()
             if self.failure_samples.hazard_levels is not None:
                 data["failure_hazards"] = self.failure_samples.hazard_levels.tolist()
+            if self.failure_samples.solicitation_levels is not None:
+                data["failure_water_levels"] = self.failure_samples.solicitation_levels.tolist()
         return data
+
+    def failure_water_levels(self) -> np.ndarray | None:
+        """Return physical solicitation (water level) values for failure samples."""
+        return self.failure_samples.solicitation_levels
 
     def __repr__(self) -> str:
         """Concise textual representation for logging and debugging."""

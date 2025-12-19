@@ -15,7 +15,7 @@ from failure_paths.reliability import (
     IntegrationConfig,
     ReliabilityIntegrator,
 )
-from failure_paths.reliability.plotting import IntegrationGridPlotter
+from failure_paths.reliability.plotting import IntegrationGridPlotter, prepare_failure_histogram
 
 
 def _default_config(**overrides: float) -> IntegrationConfig:
@@ -340,3 +340,30 @@ def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
     assert output.exists()
     assert output.stat().st_size > 0
     plt.close(fig)
+
+
+def test_failure_histogram_conserves_probability() -> None:
+    config = _default_config(coarse_points=51, refine_factor=4)
+    integrator = ReliabilityIntegrator(config=config)
+    result = integrator.run()
+
+    water_levels = result.failure_water_levels()
+    assert water_levels is not None
+
+    level_min = float(water_levels.min()) - 1e-6
+    level_max = float(water_levels.max()) + 1e-6
+    edges = np.linspace(level_min, level_max, 32)
+
+    hist = prepare_failure_histogram(result, edges)
+    assert np.isclose(hist["failure_mass"].sum(), result.pf, rtol=1e-12, atol=1e-15)
+
+    cond_hist = prepare_failure_histogram(
+        result,
+        edges,
+        conditional=True,
+        solicitation_distribution=config.s_distribution,
+    )
+    cdf_edges = np.array(config.s_distribution.computeCDF(cond_hist["bin_edges"][:, np.newaxis])).flatten()
+    bin_probs = np.diff(cdf_edges)
+    reconstructed_pf = float(np.sum(cond_hist["conditional_failure"] * bin_probs))
+    assert np.isclose(reconstructed_pf, result.pf, rtol=1e-12, atol=1e-15)
