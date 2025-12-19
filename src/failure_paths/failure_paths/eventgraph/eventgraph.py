@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import textwrap
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -243,6 +244,7 @@ class EventGraph(BaseModel, ABC):
 
         failure_paths = self.get_failure_paths(start_nodes=start_nodes)
         results: list[FailurePathProbabilities] = []
+        fc_data = []
         for failure_path in failure_paths:
             nodes = failure_path.nodes
             prob_matrix = np.full((len(levels), len(nodes)), np.nan, dtype=float)
@@ -259,6 +261,9 @@ class EventGraph(BaseModel, ABC):
             cum_prob_matrix = np.cumsum(cum_prob_matrix, axis=1)
             cum_prob_matrix = np.exp(cum_prob_matrix)
 
+            # Save last column
+            fc_data.append(cum_prob_matrix[:, [-1]])
+
             results.append(
                 FailurePathProbabilities(
                     path=failure_path,
@@ -268,7 +273,11 @@ class EventGraph(BaseModel, ABC):
                 )
             )
 
-        return results
+        # use math.fsum for accurate row-wise summation
+        fc_data = np.hstack(fc_data)
+        fc_comb = pd.Series(index=water_levels, data=np.array([math.fsum(row) for row in fc_data], dtype=float))
+
+        return fc_comb, results
 
     @staticmethod
     def _format_label(text: str, width: int) -> str:

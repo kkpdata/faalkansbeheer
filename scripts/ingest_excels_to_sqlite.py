@@ -85,7 +85,7 @@ if __name__ == "__main__":
             paths = restored.get_failure_paths()
             for p in paths:
                 print(p)
-            results = restored.get_failure_path_probabilities(water_levels=[3, 4])
+            _, results = restored.get_failure_path_probabilities(water_levels=[3, 4])
             for r in results:
                 print(r.cumulative_probabilities)
 

@@ -89,7 +89,7 @@ class EventTable(TableModel):
         numpy.ndarray
             Interpolated probabilities or reliability indices for each water level.
         """
-        subset = self.df.loc[node_id, ["h", "Beta_h"]]
+        subset = self.df.loc[node_id, ["h", "Beta_h"]].sort_values(["h", "Beta_h"], ascending=[True, False])
         h_array = np.asarray(h, dtype=float)
         if len(subset) == 1:
             interp_vals = np.full(h_array.shape, subset.Beta_h.iat[0])
