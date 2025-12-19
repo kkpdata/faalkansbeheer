@@ -158,7 +158,7 @@ def test_get_failure_paths_honors_custom_start_nodes() -> None:
 
 def test_get_failure_path_probabilities_single_level() -> None:
     dummy = build_branching_graph()
-    results = dummy.get_failure_path_probabilities(0.0)
+    _, results = dummy.get_failure_path_probabilities(0.0)
     assert len(results) == 3
     mapping = {tuple(entry.path.nodes): entry for entry in results}
     target_path = ((-3, 0), (1, 10), (1, 99))
@@ -187,7 +187,7 @@ def test_get_failure_path_probabilities_single_level() -> None:
 def test_get_failure_path_probabilities_multiple_levels() -> None:
     dummy = build_branching_graph()
     levels = [0.0, 1.0]
-    results = dummy.get_failure_path_probabilities(levels, start_nodes=[(-3, 0)])
+    _, results = dummy.get_failure_path_probabilities(levels, start_nodes=[(-3, 0)])
     assert len(results) == 2
     mapping = {tuple(entry.path.nodes): entry for entry in results}
     target_path = ((-3, 0), (2, 10), (2, 99))

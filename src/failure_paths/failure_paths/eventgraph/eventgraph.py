@@ -275,7 +275,7 @@ class EventGraph(BaseModel, ABC):
 
         # use math.fsum for accurate row-wise summation
         fc_data = np.hstack(fc_data)
-        fc_comb = pd.Series(index=water_levels, data=np.array([math.fsum(row) for row in fc_data], dtype=float))
+        fc_comb = pd.Series(index=levels, data=np.array([math.fsum(row) for row in fc_data], dtype=float))
 
         return fc_comb, results
 

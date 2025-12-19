@@ -58,7 +58,11 @@ def _form_reference_result(
     form = ot.FORM(optim_algo, event)
     form.run()
     result = form.getResult()
-    return float(result.getEventProbability()), float(result.getHasoferReliabilityIndex())
+    pf = float(result.getEventProbability())
+    beta = float(result.getHasoferReliabilityIndex())
+    alphas = -np.array(result.getStandardSpaceDesignPoint()) / beta
+
+    return pf, beta, alphas
 
 
 def test_integrator_matches_analytic_pf() -> None:
@@ -164,13 +168,15 @@ def test_integrator_matches_form_reference() -> None:
     integrator = ReliabilityIntegrator(config=config)
     near_result = integrator.run()
 
-    pf_form, beta_form = _form_reference_result(
+    _, beta_form, alpha_form = _form_reference_result(
         config.r_distribution,
         config.s_distribution,
         config.threshold,
     )
 
     assert math.isclose(near_result.beta_pf, beta_form, rel_tol=2e-2)
+    assert math.isclose(near_result.alpha[0], alpha_form[0], rel_tol=2e-2)
+    assert math.isclose(near_result.alpha[1], alpha_form[1], rel_tol=2e-2)
 
 
 def test_hazard_curve_validation() -> None:
