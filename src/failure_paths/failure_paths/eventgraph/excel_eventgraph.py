@@ -117,6 +117,11 @@ class ExcelEventGraph(EventGraph):
         -------
         nx.DiGraph
             Directed event graph with node metadata and EventTable.
+
+        Raises
+        ------
+        ValueError
+            If any non-start node is missing Pf/Beta values.
         """
         normalized = ExcelEventGraph._normalize_paths_table(paths)
         scenario_build = ExcelEventGraph._build_scenario_nodes(
@@ -223,6 +228,11 @@ class ExcelEventGraph(EventGraph):
         -------
         ScenarioBuildResult
             Nodes, edges, frequency samples, and grouped event data.
+
+        Raises
+        ------
+        ValueError
+            If a required frequency table is missing.
         """
         root_id = (-3, 0)
         nodes: dict[tuple[int, int], GraphNode] = {
@@ -333,10 +343,6 @@ class ExcelEventGraph(EventGraph):
         tuple
             Metadata, path, event tables, plus frequency tables if present.
 
-        Raises
-        ------
-        ValueError
-            If required sections are missing or duplicated.
         """
         with pd.ExcelFile(excel_path, engine="openpyxl") as xlsx:
             offset_mapping = ExcelEventGraph._find_table_offsets(xlsx, sheet_name=scenario_sheet)

@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
+from ..common.prob import beta_from_pf, cumulative_beta_equivalent_ot, pf_from_beta
 from .models import (
     EventTable,
     FailurePath,
@@ -50,17 +51,25 @@ class EventGraph(BaseModel, ABC):
 
         Parameters
         ----------
-        wrap_width : int, default=28
-            Maximum number of characters per line for node labels.
-        output_path : str | Path, default="output/event_tree.png"
+        wrap_width : int
+            Maximum number of characters per line for node labels. Defaults to ``28``.
+        output_path : str | Path
             File path (without extension) used by Graphviz when writing the plot.
-        view : bool, default=False
+            Defaults to ``"output/event_tree.png"``.
+        view : bool
             When ``True`` the rendered file is opened using Graphviz' viewer.
-        water_level : float | None, default=None
+            Defaults to ``False``.
+        water_level : float | None
             Optional water level used to annotate Pf/Beta values on the nodes.
-        graph_attr, node_attr, edge_attr, event_attr : dict[str, str] | None
-            Optional Graphviz attribute overrides for the global graph, nodes,
-            edges, or event-style colours.
+            Defaults to ``None``.
+        graph_attr : dict[str, str] | None, optional
+            Graphviz attribute overrides for the global graph.
+        node_attr : dict[str, str] | None, optional
+            Graphviz attribute overrides for nodes.
+        edge_attr : dict[str, str] | None, optional
+            Graphviz attribute overrides for edges.
+        event_attr : dict[str, str] | None, optional
+            Graphviz attribute overrides for event-style colours.
 
         Returns
         -------
@@ -101,8 +110,14 @@ class EventGraph(BaseModel, ABC):
             Maximum label line length.
         water_level : float | None
             Optional water level used to annotate Pf/Beta.
-        graph_attr, node_attr, edge_attr, event_attr : dict[str, str] | None
-            Attribute overrides for Graphviz entities.
+        graph_attr : dict[str, str] | None, optional
+            Attribute overrides for Graphviz graph-level settings.
+        node_attr : dict[str, str] | None, optional
+            Attribute overrides for Graphviz nodes.
+        edge_attr : dict[str, str] | None, optional
+            Attribute overrides for Graphviz edges.
+        event_attr : dict[str, str] | None, optional
+            Attribute overrides for event-style colours.
 
         Returns
         -------
@@ -184,7 +199,7 @@ class EventGraph(BaseModel, ABC):
 
         Parameters
         ----------
-        start_nodes : list[tuple[int, int]] | None, default=None
+        start_nodes : list[tuple[int, int]] | None, optional
             Optional list of graph node identifiers to use as path sources.
             When omitted, nodes with zero in-degree are treated as sources.
 
@@ -228,38 +243,46 @@ class EventGraph(BaseModel, ABC):
         ----------
         water_levels : float | Sequence[float]
             Single water level or array of levels where Pf/Beta should be evaluated.
-        start_nodes : list[tuple[int, int]] | None, default=None
+        start_nodes : list[tuple[int, int]] | None, optional
             Custom start nodes passed to :meth:`get_failure_paths`.
-        start_node_pf : float, default=1.0
+        start_node_pf : float, optional
             Probability assigned to start nodes before multiplying downstream Pf.
 
         Returns
         -------
         list[FailurePathProbabilities]
             Failure paths decorated with per-node and cumulative probabilities.
+
+        Raises
+        ------
+        ValueError
+            If ``water_levels`` is empty or not a 1D sequence.
         """
         levels = np.atleast_1d(np.array(water_levels, dtype=float))
         if levels.ndim != 1 or levels.size == 0:
             raise ValueError("water_levels must be a non-empty scalar or 1D sequence")
+
+        start_beta = float(beta_from_pf(start_node_pf, tail="upper"))
 
         failure_paths = self.get_failure_paths(start_nodes=start_nodes)
         results: list[FailurePathProbabilities] = []
         fc_data = []
         for failure_path in failure_paths:
             nodes = failure_path.nodes
-            prob_matrix = np.full((len(levels), len(nodes)), np.nan, dtype=float)
+            beta_matrix = np.full((len(levels), len(nodes)), np.nan, dtype=float)
+            prob_matrix = beta_matrix.copy()
 
+            # Fill probabilities for each node
             for idx, nid in enumerate(nodes):
                 node = self.graph.nodes[nid]
                 if node["node_type"] == "start_node":
-                    prob_matrix[:, idx] = start_node_pf
+                    beta_matrix[:, idx] = start_beta
                 else:
-                    prob_matrix[:, idx] = self.graph_events.get_event_probs(nid, levels, as_beta=False)
+                    beta_matrix[:, idx] = self.graph_events.get_event_probs(nid, levels, as_beta=True)
+                prob_matrix[:, idx] = pf_from_beta(beta_matrix[:, idx], tail="upper")
 
-            with np.errstate(divide="ignore"):
-                cum_prob_matrix = np.log(prob_matrix)
-            cum_prob_matrix = np.cumsum(cum_prob_matrix, axis=1)
-            cum_prob_matrix = np.exp(cum_prob_matrix)
+            # Product of probabilities is sum of betas
+            _, _, cum_prob_matrix = cumulative_beta_equivalent_ot(beta_matrix, axis=1)
 
             # Save last column
             fc_data.append(cum_prob_matrix[:, [-1]])

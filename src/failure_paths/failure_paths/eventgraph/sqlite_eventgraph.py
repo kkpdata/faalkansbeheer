@@ -34,11 +34,16 @@ class SqliteEventGraph(EventGraph):
         ----------
         db_path : str | Path
             SQLite database created by :class:`EventGraphStore`.
-        scenario_id : int | None, default=None
+        scenario_id : int | None
             Explicit scenario id to load. When omitted, the ``section``,
-            ``source_path``, and ``sheet_name`` triple must be supplied.
-        section, source_path, sheet_name : str | None
-            Scenario identifiers used when ``scenario_id`` is not provided.
+            ``source_path``, and ``sheet_name`` triple must be supplied. Defaults
+            to ``None``.
+        section : str | None, optional
+            Section identifier used when ``scenario_id`` is not provided.
+        source_path : str | None, optional
+            Source workbook path used when ``scenario_id`` is not provided.
+        sheet_name : str | None, optional
+            Sheet identifier used when ``scenario_id`` is not provided.
 
         Returns
         -------
@@ -73,7 +78,7 @@ class SqliteEventGraph(EventGraph):
         ----------
         db_path : str | Path
             SQLite database path.
-        section : str | None, default=None
+        section : str | None, optional
             Optional filter limiting the results to a single section.
 
         Returns

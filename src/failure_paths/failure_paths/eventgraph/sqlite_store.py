@@ -107,18 +107,17 @@ CREATE_STATEMENTS: tuple[str, ...] = (
 
 
 class EventGraphStore:
-    """Lightweight helper that persists scenario data and graph artifacts in SQLite."""
+    """Lightweight helper that persists scenario data and graph artifacts in SQLite.
+
+    Parameters
+    ----------
+    db_path : str | Path
+        SQLite file location.
+    read_only : bool
+        When ``True`` the store opens the database in read-only mode. Defaults to ``False``.
+    """
 
     def __init__(self, db_path: str | Path, *, read_only: bool = False) -> None:
-        """Create a store bound to ``db_path``.
-
-        Parameters
-        ----------
-        db_path : str | Path
-            SQLite file location.
-        read_only : bool, default=False
-            When ``True`` the store opens the database in read-only mode.
-        """
         self.db_path = Path(db_path)
         self.read_only = read_only
         self._conn: sqlite3.Connection | None = None

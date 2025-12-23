@@ -7,13 +7,18 @@ import numpy as np
 import openturns as ot
 
 from ..common.interp import LinearInterpolator
+from ..common.prob import beta_from_pf, pf_from_beta
 
 
 class _BetaCurveBase(ABC):
     """Shared helper for hazard/fragility curves storing beta/level interpolators."""
 
-    def __init__(self) -> None:
+    def __init__(self, beta_inf_cap: float = 1e6) -> None:
         self.std_normal = ot.Normal()
+        self.beta_inf_cap = float(beta_inf_cap)
+
+    def _sanitize_beta_knots(self, betas: np.ndarray) -> np.ndarray:
+        return np.nan_to_num(betas, posinf=self.beta_inf_cap, neginf=-self.beta_inf_cap)
 
     @abstractmethod
     def set_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
@@ -29,32 +34,26 @@ class _BetaCurveBase(ABC):
 
     def probabilities_to_beta(self, probs: np.ndarray | float, tail: bool = False) -> np.ndarray:
         probs_arr = np.asarray(probs, dtype=float)
-        flat = np.clip(probs_arr.flatten(), 0, 1)
-        betas = np.array(self.std_normal.computeQuantile(flat)).flatten()
-        betas = np.nan_to_num(betas)
+        probs_arr = np.clip(probs_arr, 0, 1)
         if tail:
-            betas = -1 * betas
-        return betas.reshape(probs_arr.shape)
+            betas = beta_from_pf(probs_arr, tail="upper")
+        else:
+            betas = beta_from_pf(probs_arr, tail="lower")
+        return np.nan_to_num(betas, nan=0.0, posinf=np.inf, neginf=-np.inf)
 
     def beta_to_probabilities(self, beta: np.ndarray | float) -> np.ndarray:
         beta_arr = np.asarray(beta, dtype=float)
-        flat = beta_arr.flatten()
-        probs = np.array(self.std_normal.computeCDF(flat[:, np.newaxis]))
-        return probs.reshape(beta_arr.shape)
+        return pf_from_beta(beta_arr, tail="lower")
 
     def cdf(self, hazard: np.ndarray | float) -> np.ndarray:
         hazard_arr = np.asarray(hazard, dtype=float)
         beta_vals = self._beta_from_level.value(hazard_arr)
-        flat = beta_vals.flatten()
-        probs = np.array(self.std_normal.computeCDF(flat[:, np.newaxis]))
-        return probs.reshape(hazard_arr.shape)
+        return pf_from_beta(beta_vals, tail="lower")
 
     def survival(self, hazard: np.ndarray | float) -> np.ndarray:
         hazard_arr = np.asarray(hazard, dtype=float)
         beta_vals = self._beta_from_level.value(hazard_arr)
-        flat = beta_vals.flatten()
-        probs = np.array(self.std_normal.computeSurvivalFunction(flat[:, np.newaxis]))
-        return probs.reshape(hazard_arr.shape)
+        return pf_from_beta(beta_vals, tail="upper")
 
     def quantile(self, prob: np.ndarray | float, tail: bool = False) -> np.ndarray:
         prob_arr = np.asarray(prob, dtype=float)
@@ -79,8 +78,10 @@ class HazardCurve(_BetaCurveBase):
         self,
         hazard_levels: Sequence[float],
         exceedance_probs: Sequence[float],
+        *,
+        beta_inf_cap: float = 1e6,
     ) -> None:
-        super().__init__()
+        super().__init__(beta_inf_cap=beta_inf_cap)
         self.set_levels(hazard_levels, exceedance_probs)
 
     def set_levels(self, hazard_levels: Sequence[float], exceedance_probs: Sequence[float]):
@@ -88,8 +89,9 @@ class HazardCurve(_BetaCurveBase):
         probs = np.clip(probs, 0, 1)
         if np.any(np.diff(probs) > 0):
             raise ValueError("exceedance_probs must be non-increasing.")
-        betas = np.array(self.std_normal.computeQuantile(probs, True)).reshape(probs.shape)
+        betas = beta_from_pf(probs, tail="upper")
 
+        betas = self._sanitize_beta_knots(betas)
         self._validate_levels(hazard_levels, betas)
         self.hazard_levels = np.asarray(hazard_levels, dtype=float)
         self.beta_knots = np.asarray(betas, dtype=float)
@@ -104,11 +106,14 @@ class FragilityCurve(_BetaCurveBase):
         self,
         hazard_levels: Sequence[float],
         betas: Sequence[float],
+        *,
+        beta_inf_cap: float = 1e6,
     ) -> None:
-        super().__init__()
+        super().__init__(beta_inf_cap=beta_inf_cap)
         self.set_levels(hazard_levels, betas)
 
     def set_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
+        betas = self._sanitize_beta_knots(np.asarray(betas, dtype=float))
         self._validate_levels(hazard_levels, betas)
         self.hazard_levels = np.asarray(hazard_levels, dtype=float)
         self.beta_knots = np.asarray(betas, dtype=float)

@@ -7,16 +7,15 @@ from .curves import FragilityCurve, HazardCurve
 
 
 class HazardDerivedDistribution(ot.PythonDistribution):
-    """Treat a HazardCurve as a full OpenTURNS distribution."""
+    """Treat a HazardCurve as a full OpenTURNS distribution.
+
+    Parameters
+    ----------
+    hazard_curve : HazardCurve
+        Curve describing cumulative probabilities vs hazard levels.
+    """
 
     def __init__(self, hazard_curve: HazardCurve) -> None:
-        """Build a distribution wrapper around a :class:`HazardCurve`.
-
-        Parameters
-        ----------
-        hazard_curve : HazardCurve
-            Curve describing cumulative probabilities vs hazard levels.
-        """
         super().__init__(1)
         self.hazard_curve = hazard_curve
 
@@ -40,16 +39,15 @@ class HazardDerivedDistribution(ot.PythonDistribution):
 
 
 class FragilityDerivedDistribution(ot.PythonDistribution):
-    """Construct an OpenTURNS distribution from a FragilityCurve."""
+    """Construct an OpenTURNS distribution from a FragilityCurve.
+
+    Parameters
+    ----------
+    fragility_curve : FragilityCurve
+        Curve relating hazard levels to conditional failure probabilities.
+    """
 
     def __init__(self, fragility_curve: FragilityCurve) -> None:
-        """Create a distribution that reuses the fragility beta mappings.
-
-        Parameters
-        ----------
-        fragility_curve : FragilityCurve
-            Curve relating hazard levels to conditional failure probabilities.
-        """
         super().__init__(1)
         self.fragility_curve = fragility_curve
 

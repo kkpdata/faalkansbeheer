@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import openturns as ot
 
+from ..common.prob import beta_from_pf, pf_from_beta
 from .config import IntegrationConfig
 from .curve_distributions import FragilityDerivedDistribution, HazardDerivedDistribution
 from .results import FailureSamples, IntegrationResult
@@ -77,10 +78,9 @@ class ReliabilityIntegrator:
         np.ndarray | float
             Probability values with the same shape as the input.
         """
-        arr = np.atleast_1d(x)
-        values = np.array(self.std_normal.computeCDF(arr[:, np.newaxis])).flatten()
+        values = pf_from_beta(x, tail="lower")
         if np.isscalar(x):
-            return values[0]
+            return float(values)
         return values
 
     def evaluate_limit_state(self, u1: np.ndarray, u2: np.ndarray) -> np.ndarray:
@@ -183,10 +183,10 @@ class ReliabilityIntegrator:
         ----------
         u_values : np.ndarray
             Standard-normal coordinates.
-        compute_cdf : bool, default=True
-            Whether to compute the lower-tail probabilities.
-        compute_survival : bool, default=True
-            Whether to compute the upper-tail probabilities.
+        compute_cdf : bool
+            Whether to compute the lower-tail probabilities. Defaults to ``True``.
+        compute_survival : bool
+            Whether to compute the upper-tail probabilities. Defaults to ``True``.
 
         Returns
         -------
@@ -195,17 +195,14 @@ class ReliabilityIntegrator:
             ``None`` when the corresponding ``compute_*`` flag is ``False``).
         """
         arr = np.asarray(u_values)
-        flat = arr.reshape(-1)
         cdf = None
         survival = None
 
         if compute_cdf:
-            cdf_vals = np.array(self.std_normal.computeCDF(flat[:, np.newaxis])).flatten()
-            cdf = cdf_vals.reshape(arr.shape)
+            cdf = pf_from_beta(arr, tail="lower")
 
         if compute_survival:
-            surv_vals = np.array(self.std_normal.computeCDF((-flat)[:, np.newaxis])).flatten()
-            survival = surv_vals.reshape(arr.shape)
+            survival = pf_from_beta(arr, tail="upper")
 
         return cdf, survival
 
@@ -301,6 +298,11 @@ class ReliabilityIntegrator:
         -------
         _DistributionGridData
             Cached coordinates, probabilities, and mask arrays describing the grid.
+
+        Raises
+        ------
+        RuntimeError
+            If the U-grid configuration produces non-positive probability mass.
         """
         cfg = self.config
         u_edges = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
@@ -430,19 +432,19 @@ class ReliabilityIntegrator:
 
         s_cdf = np.array(self.s_distribution.computeCDF(r_vals[:, np.newaxis])).flatten()
         s_survival = np.array(self.s_distribution.computeSurvivalFunction(r_vals[:, np.newaxis])).flatten()
-        s_cdf = np.clip(s_cdf, 1e-300, 1)
-        s_survival = np.clip(s_survival, 1e-300, 1)
+        s_cdf = np.clip(s_cdf, 0.0, 1.0)
+        s_survival = np.clip(s_survival, 0.0, 1.0)
 
         u2_vals = np.empty_like(s_cdf, dtype=float)
         lower_mask = s_cdf <= 0.5
 
         if np.any(lower_mask):
             lprobs = s_cdf[lower_mask]
-            u2_vals[lower_mask] = np.array(self.std_normal.computeQuantile(lprobs)).reshape(lprobs.shape)
+            u2_vals[lower_mask] = beta_from_pf(lprobs, tail="lower")
 
         if np.any(~lower_mask):
             uprobs = s_survival[~lower_mask]
-            u2_vals[~lower_mask] = np.array(self.std_normal.computeQuantile(uprobs, True)).reshape(uprobs.shape)
+            u2_vals[~lower_mask] = beta_from_pf(uprobs, tail="upper")
 
         return u2_vals
 
@@ -553,7 +555,7 @@ class ReliabilityIntegrator:
             raise RuntimeError("No failure cells detected during refinement.")
 
         pf = float(w_fail.sum())
-        beta_pf = float(self.std_normal.computeQuantile(pf, True)[0])
+        beta_pf = float(beta_from_pf(pf, tail="upper"))
 
         udist_fail = np.linalg.norm(U_fail, axis=1)
         near_idx = int(np.argmin(udist_fail))

@@ -9,6 +9,7 @@ import pandera.pandas as pa
 from pandera.typing import Series
 
 from ...common.interp import LinearInterpolator
+from ...common.prob import beta_from_pf, pf_from_beta
 from .table_model import TableModel
 
 
@@ -98,8 +99,7 @@ class EventTable(TableModel):
             interp_vals = interpolator.value(h_array)
 
         if not as_beta:
-            interp_vals = np.array(self.std_normal.computeSurvivalFunction(interp_vals[:, np.newaxis]))
-            interp_vals = interp_vals.reshape(h_array.shape)
+            interp_vals = pf_from_beta(interp_vals, tail="upper")
 
         return interp_vals
 
@@ -124,11 +124,7 @@ class EventTable(TableModel):
             return beta
         values = pf.loc[mask].astype(float).to_numpy()
         beta_filled = beta.astype(float)
-        beta_filled.loc[mask] = -1 * np.array(cls.std_normal.computeQuantile(values)).reshape(values.shape)
-
-        # Replace inf values
-        beta_filled.loc[np.isposinf(beta_filled)] = 9999999.9
-        beta_filled.loc[np.isneginf(beta_filled)] = -9999999.9
+        beta_filled.loc[mask] = beta_from_pf(values, tail="upper")
 
         return beta_filled
 
@@ -153,8 +149,7 @@ class EventTable(TableModel):
             return pf
         values = beta.loc[mask].astype(float).to_numpy(dtype=float)
         pf_filled = pf.astype(float)
-        pf_values = np.array(cls.std_normal.computeCDF((-values)[:, np.newaxis])).reshape(values.shape)
-        pf_filled.loc[mask] = pf_values
+        pf_filled.loc[mask] = pf_from_beta(values, tail="upper")
         return pf_filled
 
     @classmethod

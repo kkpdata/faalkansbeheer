@@ -33,7 +33,7 @@ def _default_config(**overrides: float) -> IntegrationConfig:
 
 def _form_reference_result(
     r_distribution: ot.Distribution, s_distribution: ot.Distribution, threshold: float = 0.0
-) -> tuple[float, float]:
+) -> tuple[float, np.ndarray]:
     marginals = {"R": r_distribution, "S": s_distribution}
     distribution = ot.ComposedDistribution(
         list(marginals.values()),
@@ -47,7 +47,7 @@ def _form_reference_result(
     event = ot.ThresholdEvent(composite, ot.Less(), threshold)
     event.setName("failure")
 
-    optim_algo = ot.Cobyla()
+    optim_algo = ot.AbdoRackwitz()
     optim_algo.setMaximumCallsNumber(10000)
     optim_algo.setMaximumAbsoluteError(1e-10)
     optim_algo.setMaximumRelativeError(1e-10)
@@ -58,11 +58,18 @@ def _form_reference_result(
     form = ot.FORM(optim_algo, event)
     form.run()
     result = form.getResult()
-    pf = float(result.getEventProbability())
     beta = float(result.getHasoferReliabilityIndex())
     alphas = -np.array(result.getStandardSpaceDesignPoint()) / beta
 
-    return pf, beta, alphas
+    algo = ot.PostAnalyticalImportanceSampling(result)
+    algo.setMaximumCoefficientOfVariation(1e-4)
+    algo.setBlockSize(int(1e5))
+    algo.setMaximumOuterSampling(int(1e2))
+    algo.run()
+    result2 = algo.getResult()
+    beta = ot.Normal().computeQuantile(result2.getProbabilityEstimate(), True)[0]
+
+    return beta, alphas
 
 
 def test_integrator_matches_analytic_pf() -> None:
@@ -168,13 +175,13 @@ def test_integrator_matches_form_reference() -> None:
     integrator = ReliabilityIntegrator(config=config)
     near_result = integrator.run()
 
-    _, beta_form, alpha_form = _form_reference_result(
+    beta_form, alpha_form = _form_reference_result(
         config.r_distribution,
         config.s_distribution,
         config.threshold,
     )
 
-    assert math.isclose(near_result.beta_pf, beta_form, rel_tol=2e-2)
+    assert math.isclose(near_result.beta_pf, beta_form, rel_tol=1e-3)
     assert math.isclose(near_result.alpha[0], alpha_form[0], rel_tol=2e-2)
     assert math.isclose(near_result.alpha[1], alpha_form[1], rel_tol=2e-2)
 

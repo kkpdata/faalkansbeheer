@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+import openturns as ot
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
 from matplotlib.colors import BoundaryNorm, ListedColormap
@@ -14,16 +15,15 @@ from .results import IntegrationResult
 
 
 class IntegrationGridPlotter:
-    """Render the integration grid of a ReliabilityIntegrator instance."""
+    """Render the integration grid of a ReliabilityIntegrator instance.
+
+    Parameters
+    ----------
+    integrator : ReliabilityIntegrator
+        Integrator whose grid and diagnostics will be visualized.
+    """
 
     def __init__(self, integrator: ReliabilityIntegrator) -> None:
-        """Initialize the plotter.
-
-        Parameters
-        ----------
-        integrator : ReliabilityIntegrator
-            Integrator whose grid and diagnostics will be visualized.
-        """
         self.integrator = integrator
 
     def plot(
@@ -155,7 +155,7 @@ def prepare_failure_histogram(
     bin_edges: np.ndarray | list[float],
     *,
     conditional: bool = False,
-    solicitation_distribution=None,
+    solicitation_distribution: ot.Distribution | None = None,
 ) -> dict[str, np.ndarray]:
     """Aggregate failure weights over solicitation (water-level) bins.
 
@@ -165,12 +165,13 @@ def prepare_failure_histogram(
         Reliability outcome whose failure samples will be binned.
     bin_edges : np.ndarray | list[float]
         Monotone sequence of bin edges in water-level coordinates.
-    conditional : bool, default=False
+    conditional : bool
         When ``True``, compute ``P(R < S | S in bin)`` by dividing each
         failure-weight bin by the corresponding solicitation probability mass.
-    solicitation_distribution : openturns.Distribution, optional
+        Defaults to ``False``.
+    solicitation_distribution : ot.Distribution | None
         Distribution or hazard-derived distribution describing solicitation.
-        Required when ``conditional`` is ``True``.
+        Required when ``conditional`` is ``True``. Defaults to ``None``.
 
     Returns
     -------
@@ -235,7 +236,7 @@ def plot_failure_histogram(
     bin_edges: np.ndarray | list[float],
     *,
     conditional: bool = False,
-    solicitation_distribution=None,
+    solicitation_distribution: ot.Distribution | None = None,
     ax: Axes | None = None,
     figsize: tuple[float, float] = (7.0, 4.0),
 ) -> tuple[Figure, Axes, dict[str, np.ndarray]]:
@@ -247,16 +248,19 @@ def plot_failure_histogram(
         Reliability outcome supplying the failure samples.
     bin_edges : np.ndarray | list[float]
         Water-level bin edges passed through to :func:`prepare_failure_histogram`.
-    conditional : bool, default=False
+    conditional : bool
         When ``True``, plot conditional failure probabilities per bin; otherwise
-        plot the absolute failure probability mass within each bin.
-    solicitation_distribution : openturns.Distribution, optional
+        plot the absolute failure probability mass within each bin. Defaults to
+        ``False``.
+    solicitation_distribution : ot.Distribution | None
         Required when ``conditional`` is ``True`` so bin probability masses can
-        be computed.
-    ax : matplotlib.axes.Axes, optional
+        be computed. Defaults to ``None``.
+    ax : Axes | None
         Axes receiving the plot. A new figure/axes pair is created when omitted.
-    figsize : tuple[float, float], default=(7.0, 4.0)
-        Size for the fallback figure when ``ax`` is ``None``.
+        Defaults to ``None``.
+    figsize : tuple[float, float]
+        Size for the fallback figure when ``ax`` is ``None``. Defaults to
+        ``(7.0, 4.0)``.
 
     Returns
     -------
@@ -271,9 +275,7 @@ def plot_failure_histogram(
         solicitation_distribution=solicitation_distribution,
     )
     edges = hist_data["bin_edges"]
-    values = (
-        hist_data["conditional_failure"] if conditional else hist_data["failure_mass"]
-    )
+    values = hist_data["conditional_failure"] if conditional else hist_data["failure_mass"]
     widths = np.diff(edges)
     centers = edges[:-1] + 0.5 * widths
 
