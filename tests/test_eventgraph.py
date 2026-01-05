@@ -179,7 +179,7 @@ def test_get_failure_path_probabilities_single_level() -> None:
     assert isinstance(cum_df, pd.DataFrame)
     assert cum_df.shape == matrix.shape
     assert list(cum_df.columns) == list(target_path)
-    assert cum_df.at[0.0, (-3, 0)] == pytest.approx(1.0)
+    assert np.isnan(cum_df.at[0.0, (-3, 0)])
     assert cum_df.at[0.0, (1, 10)] == pytest.approx(event_val)
     assert cum_df.at[0.0, (1, 99)] == pytest.approx(event_val * fail_val)
 
@@ -209,6 +209,6 @@ def test_get_failure_path_probabilities_multiple_levels() -> None:
     cum_df = target.cumulative_probabilities
     assert isinstance(cum_df, pd.DataFrame)
     np.testing.assert_allclose(
-        cum_df.to_numpy(),
-        np.cumprod(matrix.to_numpy(), axis=1),
+        cum_df.to_numpy()[:, 1:],
+        np.cumprod(matrix.to_numpy()[:, 1:], axis=1),
     )

@@ -273,8 +273,15 @@ class EventGraph(BaseModel, ABC):
             prob_matrix = beta_matrix.copy()
 
             # Fill probabilities for each node
+            scen_idxs = []
+            cum_idxs = []
             for idx, nid in enumerate(nodes):
                 node = self.graph.nodes[nid]
+                if node["node_type"] in ["start_node", "scenario_node"]:
+                    scen_idxs.append(idx)
+                else:
+                    cum_idxs.append(idx)
+
                 if node["node_type"] == "start_node":
                     beta_matrix[:, idx] = start_beta
                 else:
@@ -282,10 +289,23 @@ class EventGraph(BaseModel, ABC):
                 prob_matrix[:, idx] = pf_from_beta(beta_matrix[:, idx], tail="upper")
 
             # Product of probabilities is sum of betas
-            _, _, cum_prob_matrix = cumulative_beta_equivalent_ot(beta_matrix, axis=1)
+            cum_prob_matrix = np.full_like(beta_matrix, np.nan)
+            cum_beta_matrix = np.full_like(beta_matrix, np.nan)
+            cum_beta_matrix[:, cum_idxs], _, cum_prob_matrix[:, cum_idxs] = cumulative_beta_equivalent_ot(
+                beta_matrix[:, cum_idxs], axis=1
+            )
 
-            # Save last column
-            fc_data.append(cum_prob_matrix[:, [-1]])
+            # Combine scenario columns and last column
+            _, _, tot_cum = cumulative_beta_equivalent_ot(
+                np.hstack(
+                    [
+                        beta_matrix[:, scen_idxs],
+                        cum_beta_matrix[:, [-1]],
+                    ]
+                ),
+                axis=1,
+            )
+            fc_data.append(tot_cum[:, [-1]])
 
             results.append(
                 FailurePathProbabilities(
