@@ -1,0 +1,55 @@
+[workspace]
+name = "failure_paths"
+version = "0.0.2"
+description = "TODO"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64"]
+readme = "README.md"
+license = "GPL-3.0"
+license-file = "LICENSE"
+
+[tasks]
+# Installation
+install = "pre-commit install"
+
+# Docs
+quartodoc-build = { cmd = "quartodoc build && rm objects.json", cwd = "docs" ,inputs = [
+    "docs/_quarto.yml",
+    "src/Python_package_template",
+    ],outputs = [
+    "docs/reference/"
+    ]}
+quarto-preview = { cmd = "export QUARTO_PYTHON=python && quarto preview docs", depends-on = [
+    "quartodoc-build",
+] }
+quarto-check = { cmd = "quarto check all", depends-on = ["quartodoc-build"] }
+quarto-render = { cmd = "export QUARTO_PYTHON=python && quarto render docs --to html --execute", depends-on = [
+    "quartodoc-build",
+] }
+docs = { depends-on = ["quarto-preview"] }
+pre-commit = "pre-commit run --all-files"
+
+[dependencies]
+python = ">=3.12, <3.14"
+graphviz = ">=14.0"
+networkx = ">=3.6"
+pandas = ">=2.3"
+openpyxl = ">=3.1"
+numpy = ">=2.3"
+openturns = "*"
+pandera = ">=0.27"
+pydantic = ">=2.12"
+python-graphviz = ">=0.21"
+ruff = ">=0.14"
+jinja2 = ">=3.1"
+pytest = ">=9.0"
+pytest-cov = ">=7.0"
+scipy = ">=1.16"
+quarto = ">=1.5"
+quartodoc = ">=0.9"
+pre-commit = ">=4.5"
+matplotlib = ">=3.10.8,<4"
+tqdm = ">=4.67.1,<5"
+
+[pypi-dependencies]
+failure_paths = { path = "src/failure_paths", editable = true }
