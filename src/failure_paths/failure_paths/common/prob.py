@@ -202,7 +202,7 @@ def cumulative_beta_equivalent_ot(
 
     Parameters
     ----------
-    beta_matrix : array_like, shape (m, n)
+    beta_matrix : np.ndarray | list[list[float]]
         Reliability indices (betas). Converted to a float array.
     axis : int, optional
         Axis to accumulate along: 0 accumulates down rows (within each column),
