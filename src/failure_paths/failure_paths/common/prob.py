@@ -232,7 +232,8 @@ def cumulative_beta_equivalent_ot(
 
     # logPf = log(Phi(-beta)) = log(SF(beta)) for standard normal
     # OpenTURNS: logpNormal(x, tail=True) gives log complementary CDF (log SF).
-    logPf = np.vectorize(lambda x: ot.DistFunc.logpNormal(float(x), True), otypes=[float])(B)
+    with np.errstate(divide="ignore"):
+        logPf = np.vectorize(lambda x: ot.DistFunc.logpNormal(float(x), True), otypes=[float])(B)
 
     # cumulative log-products
     logPf_cum = np.cumsum(logPf, axis=axis)

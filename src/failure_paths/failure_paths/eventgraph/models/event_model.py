@@ -91,6 +91,17 @@ class EventTable(TableModel):
             Interpolated probabilities or reliability indices for each water level.
         """
         subset = self.df.loc[node_id, ["h", "Beta_h"]].sort_values(["h", "Beta_h"], ascending=[True, False])
+
+        # keep only the last +inf row, drop the rest
+        inf_mask = np.isposinf(subset["Beta_h"])
+        keep_mask = ~inf_mask | (inf_mask & (inf_mask.cumsum() == inf_mask.sum()))
+        subset = subset[keep_mask]
+
+        # keep only the first -inf row, drop the rest
+        ninf_mask = np.isneginf(subset["Beta_h"])
+        keep_mask = ~ninf_mask | (ninf_mask & (ninf_mask.cumsum() == 1))
+        subset = subset[keep_mask]
+
         h_array = np.asarray(h, dtype=float)
         if len(subset) == 1:
             interp_vals = np.full(h_array.shape, subset.Beta_h.iat[0])
