@@ -236,6 +236,7 @@ class EventGraph(BaseModel, ABC):
         *,
         start_nodes: list[tuple[int, int]] | None = None,
         start_node_pf: float = 1.0,
+        ensure_monotone: bool = True,
     ) -> list[FailurePathProbabilities]:
         """Annotate each simple path with Pf and cumulative probabilities.
 
@@ -247,6 +248,8 @@ class EventGraph(BaseModel, ABC):
             Custom start nodes passed to :meth:`get_failure_paths`.
         start_node_pf : float, optional
             Probability assigned to start nodes before multiplying downstream Pf.
+        ensure_monotone : bool
+            Ensure resulting fragility curve is monotone
 
         Returns
         -------
@@ -318,7 +321,12 @@ class EventGraph(BaseModel, ABC):
 
         # use math.fsum for accurate row-wise summation
         fc_data = np.hstack(fc_data)
-        fc_comb = pd.Series(index=levels, data=np.array([math.fsum(row) for row in fc_data], dtype=float))
+        fc_data = np.array([math.fsum(row) for row in fc_data], dtype=float)
+        if ensure_monotone:
+            for i in range(1, len(fc_data)):
+                if fc_data[i] < fc_data[i - 1]:
+                    fc_data[i] = fc_data[i - 1]
+        fc_comb = pd.Series(index=levels, data=fc_data)
 
         return fc_comb, results
 
