@@ -544,6 +544,7 @@ class ReliabilityIntegrator:
         IntegrationResult
             Failure probability, design point, and diagnostics.
         """
+        samples = self._apply_solicitation_cutoff(samples)
         w_fail = samples.weights
         U_fail = samples.points
         if w_fail.size == 0:
@@ -572,4 +573,32 @@ class ReliabilityIntegrator:
             failure_samples=samples,
             hazard_level=hazard_level,
             beta_pf=beta_pf,
+        )
+
+    def _apply_solicitation_cutoff(self, samples: FailureSamples) -> FailureSamples:
+        """Filter failure samples above the configured solicitation cutoff."""
+        max_level = self.config.max_solicitation_level
+        if max_level is None or samples.weights.size == 0:
+            return samples
+
+        levels = samples.solicitation_levels
+        if levels is None:
+            raise ValueError("max_solicitation_level requires solicitation levels on failure samples.")
+
+        mask = levels <= max_level
+        if np.all(mask):
+            return samples
+
+        hazard_levels = None
+        if samples.hazard_levels is not None:
+            hazard_levels = samples.hazard_levels[mask]
+
+        return FailureSamples(
+            weights=samples.weights[mask],
+            points=samples.points[mask],
+            coarse_fail_cells=samples.coarse_fail_cells,
+            refined_fail_cells=samples.refined_fail_cells,
+            mixed_cells=samples.mixed_cells,
+            hazard_levels=hazard_levels,
+            solicitation_levels=levels[mask],
         )

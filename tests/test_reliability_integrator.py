@@ -116,6 +116,40 @@ def test_integrator_matches_dirac_solicitation() -> None:
     assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-12, abs_tol=0)
 
 
+def test_integrator_respects_solicitation_cutoff() -> None:
+    mu_r, sigma_r = 2.0, 0.25
+    s_level = 1.7
+    base_config = IntegrationConfig(
+        r_distribution=ot.Normal(mu_r, sigma_r),
+        s_distribution=ot.Dirac(s_level),
+        coarse_points=101,
+        refine_factor=20,
+        u_min=-10.0,
+        u_max=10.0,
+    )
+
+    base_result = ReliabilityIntegrator(config=base_config).run()
+
+    base_payload = base_config.model_dump(exclude={"max_solicitation_level"})
+    cutoff_result = ReliabilityIntegrator(
+        config=IntegrationConfig(
+            **base_payload,
+            max_solicitation_level=s_level - 1e-6,
+        )
+    ).run()
+
+    inclusive_result = ReliabilityIntegrator(
+        config=IntegrationConfig(
+            **base_payload,
+            max_solicitation_level=s_level,
+        )
+    ).run()
+
+    assert base_result.pf > 0.0
+    assert cutoff_result.pf == 0.0
+    assert math.isclose(inclusive_result.pf, base_result.pf, rel_tol=1e-12, abs_tol=0.0)
+
+
 def test_integrator_matches_dirac_resistance() -> None:
     mu_s, sigma_s = 0.5, 0.4
     r_level = 1.4

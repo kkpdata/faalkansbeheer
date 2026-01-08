@@ -16,6 +16,10 @@ class IntegrationConfig(BaseModel):
     r_distribution: Any | None = Field(None, description="Distribution of resistance R")
     s_distribution: Any | None = Field(None, description="Distribution of solicitation S")
     threshold: float = Field(0.0, description="Failure threshold for the limit-state function.")
+    max_solicitation_level: float | None = Field(
+        default=None,
+        description="Optional upper bound on solicitation (water level) used to ignore higher failure mass.",
+    )
 
     u_min: float = Field(-10.0, description="Lower bound of the U-space integration range.")
     u_max: float = Field(10.0, description="Upper bound of the U-space integration range.")
