@@ -15,7 +15,7 @@ from failure_paths.reliability import (
     IntegrationConfig,
     ReliabilityIntegrator,
 )
-from failure_paths.reliability.plotting import IntegrationGridPlotter, prepare_failure_histogram
+from failure_paths.reliability.plotting import plot_integration_grid, prepare_failure_histogram
 
 
 def _default_config(**overrides: float) -> IntegrationConfig:
@@ -315,8 +315,7 @@ def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
 def test_integration_grid_plot_smoke(tmp_path: Path) -> None:
     config = _default_config(coarse_points=21, refine_factor=4)
     integrator = ReliabilityIntegrator(config=config)
-    plotter = IntegrationGridPlotter(integrator)
-    fig, ax = plotter.plot()
+    fig, ax = plot_integration_grid(integrator)
 
     assert fig.axes and fig.axes[0] is ax
     assert ax.get_xlabel() == "$u_R$"
@@ -344,8 +343,7 @@ def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
         refine_factor=2,
     )
     integrator = ReliabilityIntegrator(config=config)
-    plotter = IntegrationGridPlotter(integrator)
-    fig, ax = plotter.plot(limit_points=65)
+    fig, ax = plot_integration_grid(integrator, limit_points=65)
 
     assert fig.axes and fig.axes[0] is ax
     output = tmp_path / "grid_hazard.png"

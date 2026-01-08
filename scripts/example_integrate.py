@@ -2,7 +2,7 @@ from pprint import pprint
 
 import openturns as ot
 from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
-from failure_paths.reliability.plotting import IntegrationGridPlotter
+from failure_paths.reliability.plotting import plot_integration_grid
 from matplotlib import pyplot as plt
 
 config = IntegrationConfig(
@@ -20,6 +20,5 @@ result = integrator.run()
 pprint(result.summary())
 
 # visualize
-plotter = IntegrationGridPlotter(integrator)
-fig, ax = plotter.plot()
+fig, ax = plot_integration_grid(integrator)
 plt.show()
