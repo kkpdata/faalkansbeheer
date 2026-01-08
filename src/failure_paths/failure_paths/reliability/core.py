@@ -543,25 +543,23 @@ class ReliabilityIntegrator:
         -------
         IntegrationResult
             Failure probability, design point, and diagnostics.
-
-        Raises
-        ------
-        RuntimeError
-            If no failure cells are available for post-processing.
         """
         w_fail = samples.weights
         U_fail = samples.points
         if w_fail.size == 0:
-            raise RuntimeError("No failure cells detected during refinement.")
-
-        pf = float(w_fail.sum())
-        beta_pf = float(beta_from_pf(pf, tail="upper"))
-
-        udist_fail = np.linalg.norm(U_fail, axis=1)
-        near_idx = int(np.argmin(udist_fail))
-        beta_star = float(udist_fail[near_idx])
-        u_vec = U_fail[near_idx]
-        alpha_val = -u_vec / beta_star
+            # No failure cells detected during refinement.
+            pf = 0.0
+            beta_pf = float("inf")
+            beta_star = float("nan")
+            alpha_val = np.full((U_fail.shape[1],), np.nan)
+        else:
+            pf = float(w_fail.sum())
+            beta_pf = float(beta_from_pf(pf, tail="upper"))
+            udist_fail = np.linalg.norm(U_fail, axis=1)
+            near_idx = int(np.argmin(udist_fail))
+            beta_star = float(udist_fail[near_idx])
+            u_vec = U_fail[near_idx]
+            alpha_val = -u_vec / beta_star
 
         hazard_level = None
         if self.config.hazard_curve is not None:

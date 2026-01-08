@@ -175,8 +175,31 @@ def prepare_failure_histogram(
         bins do not cover all failure weight (sum differs from ``pf``).
     """
     weights = result.failure_samples.weights
+    edges = np.asarray(bin_edges, dtype=float)
+    if edges.ndim != 1 or edges.size < 2:
+        raise ValueError("bin_edges must be a one-dimensional sequence with at least two points.")
+    if np.any(np.diff(edges) <= 0):
+        raise ValueError("bin_edges must be strictly increasing.")
+
     if weights.size == 0:
-        raise ValueError("No failure samples available for histogram aggregation.")
+        failure_mass = np.zeros(edges.size - 1, dtype=float)
+        data: dict[str, np.ndarray] = {
+            "bin_edges": edges,
+            "failure_mass": failure_mass,
+        }
+        if conditional:
+            if solicitation_distribution is None:
+                raise ValueError("solicitation_distribution is required for conditional probabilities.")
+            cdf_vals = np.array(solicitation_distribution.computeCDF(edges[:, np.newaxis])).flatten()
+            bin_probs = np.diff(cdf_vals)
+            conditional_vals = np.divide(
+                failure_mass,
+                bin_probs,
+                out=np.zeros_like(failure_mass),
+                where=bin_probs > 0.0,
+            )
+            data["conditional_failure"] = conditional_vals
+        return data
 
     water_levels = result.failure_water_levels()
     if water_levels is None:
@@ -184,12 +207,6 @@ def prepare_failure_histogram(
             water_levels = result.failure_samples.hazard_levels
         else:
             raise ValueError("Failure samples do not expose solicitation levels.")
-
-    edges = np.asarray(bin_edges, dtype=float)
-    if edges.ndim != 1 or edges.size < 2:
-        raise ValueError("bin_edges must be a one-dimensional sequence with at least two points.")
-    if np.any(np.diff(edges) <= 0):
-        raise ValueError("bin_edges must be strictly increasing.")
 
     failure_mass, hist_edges = np.histogram(water_levels, bins=edges, weights=weights)
     total_mass = float(failure_mass.sum())
