@@ -10,9 +10,11 @@ import numpy as np
 import openturns as ot
 import pytest
 from failure_paths.reliability import (
+    FailureSamples,
     FragilityCurve,
     HazardCurve,
     IntegrationConfig,
+    IntegrationResult,
     ReliabilityIntegrator,
 )
 from failure_paths.reliability.plotting import plot_integration_grid, prepare_failure_histogram
@@ -378,3 +380,26 @@ def test_failure_histogram_conserves_probability() -> None:
     bin_probs = np.diff(cdf_edges)
     reconstructed_pf = float(np.sum(cond_hist["conditional_failure"] * bin_probs))
     assert np.isclose(reconstructed_pf, result.pf, rtol=1e-12, atol=1e-15)
+
+
+def test_failure_histogram_handles_empty_samples() -> None:
+    samples = FailureSamples(weights=np.array([]), points=np.empty((0, 2)))
+    result = IntegrationResult(
+        pf=0.0,
+        beta_star=0.0,
+        alpha=np.zeros(2),
+        failure_samples=samples,
+        beta_pf=0.0,
+    )
+    edges = np.array([0.0, 1.0, 2.0])
+
+    hist = prepare_failure_histogram(result, edges)
+    assert np.allclose(hist["failure_mass"], 0.0)
+
+    cond_hist = prepare_failure_histogram(
+        result,
+        edges,
+        conditional=True,
+        solicitation_distribution=ot.Normal(),
+    )
+    assert np.allclose(cond_hist["conditional_failure"], 0.0)

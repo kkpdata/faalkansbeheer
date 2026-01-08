@@ -197,6 +197,10 @@ class EventTable(TableModel):
         table.df["Beta_h"] = cls._fill_beta_from_pf(pf, beta)
         table.df["Pf_h"] = cls._fill_pf_from_beta(pf, beta)
 
+        # Drop exact duplicates
+        table.df = table.df.reset_index().drop_duplicates(subset=list(cls.required_columns))
+        table.df = table.df.set_index(list(cls.index_columns))
+
         # Validate unique combinations of Faalpad_ID and Knoop_ID
         dupe_subset = ["Faalpad_ID", "Knoop_ID", "h"]
         duplicated = table.df.reset_index().duplicated(subset=dupe_subset)
