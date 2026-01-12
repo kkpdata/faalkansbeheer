@@ -150,6 +150,22 @@ def test_integrator_respects_solicitation_cutoff() -> None:
     assert math.isclose(inclusive_result.pf, base_result.pf, rel_tol=1e-12, abs_tol=0.0)
 
 
+def test_failure_samples_with_cutoff_do_not_exceed_level() -> None:
+    config = IntegrationConfig(
+        r_distribution=ot.Normal(1.5, 0.6),
+        s_distribution=ot.Normal(0.8, 0.7),
+        coarse_points=61,
+        refine_factor=4,
+        u_min=-8.0,
+        u_max=8.0,
+        max_solicitation_level=0.5,
+    )
+    result = ReliabilityIntegrator(config=config).run()
+    levels = result.failure_samples.solicitation_levels
+    assert levels is not None
+    assert np.all(levels <= config.max_solicitation_level + 1e-12)
+
+
 def test_integrator_matches_dirac_resistance() -> None:
     mu_s, sigma_s = 0.5, 0.4
     r_level = 1.4

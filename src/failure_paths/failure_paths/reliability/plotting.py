@@ -59,8 +59,8 @@ def plot_integration_grid(
     coarse_values[grid.safe_mask] = 1.0
 
     ax.pcolormesh(
-        grid.u_edges,
-        grid.u_edges,
+        grid.u1_edges,
+        grid.u2_edges,
         coarse_values.T,
         cmap=cmap,
         norm=norm,
@@ -69,8 +69,8 @@ def plot_integration_grid(
     )
 
     u_limits = (integrator.config.u_min, integrator.config.u_max)
-    ax.vlines(grid.u_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
-    ax.hlines(grid.u_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
+    ax.vlines(grid.u1_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
+    ax.hlines(grid.u2_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
 
     if (
         grid.subcell_fail_mask is not None
@@ -97,13 +97,13 @@ def plot_integration_grid(
             x_inner = x_edges[1:-1]
             y_inner = y_edges[1:-1]
 
-            y_bottom = grid.u_edges[j_cell]
-            y_top = grid.u_edges[j_cell + 1]
+            y_bottom = grid.u2_edges[j_cell]
+            y_top = grid.u2_edges[j_cell + 1]
             for x in x_inner:
                 refine_segments.append([(x, y_bottom), (x, y_top)])
 
-            x_left = grid.u_edges[i_cell]
-            x_right = grid.u_edges[i_cell + 1]
+            x_left = grid.u1_edges[i_cell]
+            x_right = grid.u1_edges[i_cell + 1]
             for y in y_inner:
                 refine_segments.append([(x_left, y), (x_right, y)])
 

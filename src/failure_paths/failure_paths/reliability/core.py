@@ -15,8 +15,10 @@ from .results import FailureSamples, IntegrationResult
 class _DistributionGridData:
     """Helper container describing the discretized U-grid."""
 
-    u_edges: np.ndarray
-    u_centers: np.ndarray
+    u1_edges: np.ndarray
+    u2_edges: np.ndarray
+    u1_centers: np.ndarray
+    u2_centers: np.ndarray
     cell_weights: np.ndarray
     fail_mask: np.ndarray
     safe_mask: np.ndarray
@@ -305,27 +307,47 @@ class ReliabilityIntegrator:
             If the U-grid configuration produces non-positive probability mass.
         """
         cfg = self.config
-        u_edges = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
-        u_centers = 0.5 * (u_edges[1:] + u_edges[:-1])
+        u1_edges = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
+        u2_edges = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
 
-        u_edges_cdf, u_edges_survival = self._normal_probabilities(u_edges)
-        u_contrib = self._u_interval_probabilities(u_edges, u_edges_cdf, u_edges_survival)
-        total_contrib = float(u_contrib.sum())
-        if total_contrib <= 0.0:
+        u_s_max = None
+        if cfg.max_solicitation_level is not None:
+            prob = float(self.s_distribution.computeCDF(cfg.max_solicitation_level))
+            prob = float(np.clip(prob, 0.0, 1.0))
+            u_s_max = float(beta_from_pf(prob, tail="lower"))
+            if cfg.u_min < u_s_max < cfg.u_max:
+                u2_edges = np.sort(np.unique(np.r_[u2_edges, u_s_max]))
+
+        u1_centers = 0.5 * (u1_edges[1:] + u1_edges[:-1])
+        u2_centers = 0.5 * (u2_edges[1:] + u2_edges[:-1])
+
+        u1_edges_cdf, u1_edges_survival = self._normal_probabilities(u1_edges)
+        u2_edges_cdf, u2_edges_survival = self._normal_probabilities(u2_edges)
+        u1_contrib = self._u_interval_probabilities(u1_edges, u1_edges_cdf, u1_edges_survival)
+        u2_contrib = self._u_interval_probabilities(u2_edges, u2_edges_cdf, u2_edges_survival)
+        total_contrib_u1 = float(u1_contrib.sum())
+        total_contrib_u2 = float(u2_contrib.sum())
+        if total_contrib_u1 <= 0.0 or total_contrib_u2 <= 0.0:
             raise RuntimeError("Invalid U-grid configuration produced non-positive probability mass.")
-        u_contrib = u_contrib / total_contrib
+        u1_contrib = u1_contrib / total_contrib_u1
+        u2_contrib = u2_contrib / total_contrib_u2
+
+        include_mask = None
+        if u_s_max is not None:
+            include_mask = u2_edges[1:] <= u_s_max
+            u2_contrib = np.where(include_mask, u2_contrib, 0.0)
 
         r_edges = self._map_u_to_distribution(
-            u_edges,
+            u1_edges,
             self.r_distribution,
-            u_values_cdf=u_edges_cdf,
-            u_values_survival=u_edges_survival,
+            u_values_cdf=u1_edges_cdf,
+            u_values_survival=u1_edges_survival,
         )
         s_edges = self._map_u_to_distribution(
-            u_edges,
+            u2_edges,
             self.s_distribution,
-            u_values_cdf=u_edges_cdf,
-            u_values_survival=u_edges_survival,
+            u_values_cdf=u2_edges_cdf,
+            u_values_survival=u2_edges_survival,
         )
 
         # For monotonically increasing quantile mappings, each cell spans [edge_i, edge_{i+1}]
@@ -341,9 +363,14 @@ class ReliabilityIntegrator:
         fail_mask = z_max <= 0.0
         safe_mask = z_min >= 0.0
         mixed_mask = ~(fail_mask | safe_mask)
+        if include_mask is not None:
+            column_mask = include_mask[None, :]
+            fail_mask = fail_mask & column_mask
+            safe_mask = safe_mask & column_mask
+            mixed_mask = mixed_mask & column_mask
 
-        u1_center_grid, u2_center_grid = np.meshgrid(u_centers, u_centers, indexing="ij")
-        cell_weights = u_contrib[:, None] * u_contrib[None, :]
+        u1_center_grid, u2_center_grid = np.meshgrid(u1_centers, u2_centers, indexing="ij")
+        cell_weights = u1_contrib[:, None] * u2_contrib[None, :]
 
         mixed_idx = np.argwhere(mixed_mask)
         refine_factor = cfg.refine_factor
@@ -359,10 +386,10 @@ class ReliabilityIntegrator:
             frac_edges = np.linspace(0.0, 1.0, refine_factor + 1)
             frac_centers = 0.5 * (frac_edges[1:] + frac_edges[:-1])
 
-            u1_left = u_edges[:-1][mixed_idx[:, 0]]
-            u1_right = u_edges[1:][mixed_idx[:, 0]]
-            u2_left = u_edges[:-1][mixed_idx[:, 1]]
-            u2_right = u_edges[1:][mixed_idx[:, 1]]
+            u1_left = u1_edges[:-1][mixed_idx[:, 0]]
+            u1_right = u1_edges[1:][mixed_idx[:, 0]]
+            u2_left = u2_edges[:-1][mixed_idx[:, 1]]
+            u2_right = u2_edges[1:][mixed_idx[:, 1]]
 
             u1_sub_edges = u1_left[:, None] + (u1_right - u1_left)[:, None] * frac_edges
             u2_sub_edges = u2_left[:, None] + (u2_right - u2_left)[:, None] * frac_edges
@@ -390,8 +417,10 @@ class ReliabilityIntegrator:
             sub_fail = z_sub <= 0.0
 
         return _DistributionGridData(
-            u_edges=u_edges,
-            u_centers=u_centers,
+            u1_edges=u1_edges,
+            u2_edges=u2_edges,
+            u1_centers=u1_centers,
+            u2_centers=u2_centers,
             cell_weights=cell_weights,
             fail_mask=fail_mask,
             safe_mask=safe_mask,
@@ -544,7 +573,6 @@ class ReliabilityIntegrator:
         IntegrationResult
             Failure probability, design point, and diagnostics.
         """
-        samples = self._apply_solicitation_cutoff(samples)
         w_fail = samples.weights
         U_fail = samples.points
         if w_fail.size == 0:
@@ -573,32 +601,4 @@ class ReliabilityIntegrator:
             failure_samples=samples,
             hazard_level=hazard_level,
             beta_pf=beta_pf,
-        )
-
-    def _apply_solicitation_cutoff(self, samples: FailureSamples) -> FailureSamples:
-        """Filter failure samples above the configured solicitation cutoff."""
-        max_level = self.config.max_solicitation_level
-        if max_level is None or samples.weights.size == 0:
-            return samples
-
-        levels = samples.solicitation_levels
-        if levels is None:
-            raise ValueError("max_solicitation_level requires solicitation levels on failure samples.")
-
-        mask = levels <= max_level
-        if np.all(mask):
-            return samples
-
-        hazard_levels = None
-        if samples.hazard_levels is not None:
-            hazard_levels = samples.hazard_levels[mask]
-
-        return FailureSamples(
-            weights=samples.weights[mask],
-            points=samples.points[mask],
-            coarse_fail_cells=samples.coarse_fail_cells,
-            refined_fail_cells=samples.refined_fail_cells,
-            mixed_cells=samples.mixed_cells,
-            hazard_levels=hazard_levels,
-            solicitation_levels=levels[mask],
         )
