@@ -1,0 +1,81 @@
+digraph eventgraph_workflow {
+  rankdir=TB;
+  graph [size="8.27,10.0", ratio=auto, margin="0.2"];
+  node [shape=box, style="rounded,filled", fillcolor="#eef5ff", color="#2e5c88", fontname="Helvetica", fontsize=10];
+  edge [color="#2e5c88", arrowhead=normal];
+
+  subgraph cluster_input {
+    label="Gebruikersinput";
+    labelloc="t";
+    labeljust="l";
+    color="#6fa3d2";
+    fontcolor="#2e5c88";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#e7f1fb", color="#6fa3d2", fontcolor="#2e5c88"];
+    input_excel [label="Excel-werkboek\n(metadata, paths, events)"];
+    input_sqlite [label="SQLite-opslag\n(vooraf ingelezen)"];
+    freq_tables [label="Frequentietabellen\n(optioneel; overslag of\nindirect mechanisme)"];
+  }
+
+  subgraph cluster_processing {
+    label="Dataverwerking";
+    labelloc="t";
+    labeljust="l";
+    color="#7fbf9a";
+    fontcolor="#2f6b3b";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#e9f6ef", color="#7fbf9a", fontcolor="#2f6b3b"];
+    load_tables [label="Tabellen inlezen"];
+    validate [label="Inputs valideren\n(Pf/beta compleetheid,\nconsistente paden)"];
+  }
+
+  subgraph cluster_model {
+    label="Modelopbouw";
+    labelloc="t";
+    labeljust="l";
+    color="#d2a36f";
+    fontcolor="#8a5a2b";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#f6efe7", color="#d2a36f", fontcolor="#8a5a2b"];
+    build_graph [label="Gerichte event graph bouwen"];
+    enumerate_paths [label="Faalpaden afleiden\n(unieke paden naar falen)"];
+  }
+
+  subgraph cluster_probs {
+    label="Kansberekening";
+    labelloc="t";
+    labeljust="l";
+    color="#b08ec2";
+    fontcolor="#5b2f6b";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#f1e8f6", color="#b08ec2", fontcolor="#5b2f6b"];
+    node_probs [label="Fragility curve Pf(h)\nper knoop (gebeurtenisniveau)"];
+    cumulative_probs [label="Cumulatieve Pf(h)\nlangs elk pad\nper knoop"];
+    aggregate [label="Gecombineerde Pf(h)\nover alle paden"];
+  }
+
+  subgraph cluster_outputs {
+    label="Resultaten";
+    labelloc="t";
+    labeljust="l";
+    color="#d28b8b";
+    fontcolor="#8b2f2f";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#f6e8e8", color="#d28b8b", fontcolor="#8b2f2f"];
+    outputs [label="Faalpaden\nPf(h) per knoop en cumulatief per pad\nGecombineerde Pf(h)"];
+  }
+
+  // legend removed in favor of cluster labels
+
+  input_excel -> load_tables;
+  input_sqlite -> load_tables;
+  freq_tables -> load_tables;
+  load_tables -> validate -> build_graph -> enumerate_paths -> node_probs -> cumulative_probs -> aggregate -> outputs;
+
+  // standard node-to-node flow
+}

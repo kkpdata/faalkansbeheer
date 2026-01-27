@@ -1,0 +1,83 @@
+digraph reliability_workflow {
+  rankdir=TB;
+  graph [size="8.27,10.0", ratio=auto, margin="0.2"];
+  node [shape=box, style="rounded,filled", fillcolor="#f1f7f1", color="#2f6b3b", fontname="Helvetica", fontsize=10];
+  edge [color="#2e5c88", arrowhead=normal];
+
+  subgraph cluster_input {
+    label="Gebruikersinput";
+    labelloc="t";
+    labeljust="l";
+    color="#6fa3d2";
+    fontcolor="#2e5c88";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#e7f1fb", color="#6fa3d2", fontcolor="#2e5c88"];
+    dist_inputs [label="Distributiemodus:\nR-verdeling, S-verdeling"];
+    curve_inputs [label="Curve-modus:\nHazard curve, Fragility curve"];
+    settings [label="Instellingen:\nU-space bereik, resolutie,\nmax. belasting (optioneel)"];
+  }
+
+  subgraph cluster_processing {
+    label="Dataverwerking";
+    labelloc="t";
+    labeljust="l";
+    color="#7fbf9a";
+    fontcolor="#2f6b3b";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#e9f6ef", color="#7fbf9a", fontcolor="#2f6b3b"];
+    validate_dist [label="Distributiemodus:\ninputs controleren"];
+    validate_curve [label="Curve-modus:\ninputs controleren"];
+    normalize [label="Curve-modus:\ncurves vertalen naar\nequivalente verdelingen\n(U-space)"];
+    { rank=same; validate_dist; validate_curve; }
+  }
+
+  subgraph cluster_model {
+    label="Modelopbouw";
+    labelloc="t";
+    labeljust="l";
+    color="#d2a36f";
+    fontcolor="#8a5a2b";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#f6efe7", color="#d2a36f", fontcolor="#8a5a2b"];
+    limit_state [label="Limit-state kader:\n g(R,S) = R - S"];
+    grid [label="U-space raster voor integratie"];
+  }
+
+  subgraph cluster_probs {
+    label="Kansberekening";
+    labelloc="t";
+    labeljust="l";
+    color="#b08ec2";
+    fontcolor="#5b2f6b";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#f1e8f6", color="#b08ec2", fontcolor="#5b2f6b"];
+    fail_region [label="Faalgebied bepalen op het raster"];
+    refine [label="Raster verfijnen nabij faalgrens\n(optioneel)"];
+    integrate [label="Faalmassa integreren"];
+    design_point [label="Design point en\nrichting (alpha)"];
+  }
+
+  subgraph cluster_outputs {
+    label="Resultaten";
+    labelloc="t";
+    labeljust="l";
+    color="#d28b8b";
+    fontcolor="#8b2f2f";
+    style="rounded";
+    margin="16";
+    node [fillcolor="#f6e8e8", color="#d28b8b", fontcolor="#8b2f2f"];
+    outputs [label="pf en beta_pf; beta* (design point), alpha\nOptioneel: hazard-niveau, faal-samples"];
+  }
+
+  dist_inputs -> validate_dist;
+  curve_inputs -> validate_curve;
+  settings -> validate_dist;
+  settings -> validate_curve;
+  validate_curve -> normalize -> limit_state;
+  validate_dist -> limit_state;
+  limit_state -> grid -> fail_region -> refine -> integrate -> design_point -> outputs;
+}

@@ -24,3 +24,4 @@ scripts/example_output
 scripts/example_input/old_template_faalpaden.xlsx
 scripts/example_old.py
 .coverage
+figures/*.svg
