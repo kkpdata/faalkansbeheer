@@ -6,6 +6,8 @@ website:
   title: "failure_paths"
   navbar:
     left:
+      - text: "Toelichting Combineren"
+        file: ToelichtingWerkwijzeCombineren.md
       - text: "Python API"
         file: reference/index.qmd
     right:
