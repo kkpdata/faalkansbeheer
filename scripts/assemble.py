@@ -103,8 +103,14 @@ def main() -> None:
         "Scenario": [],
         "Scenario_weight": [],
         "Scenario_Pf": [],
+        "Scenario_alpha_R": [],
+        "Scenario_alpha_S": [],
+        "Section_Pf": [],
+        "Section_alpha_R": [],
+        "Section_alpha_S": [],
     }
-    for section_name, scenarios in tqdm.tqdm(sections.items(), desc="Sections"):
+    sorted_sections = sorted(sections.items(), key=lambda item: item[0])
+    for section_name, scenarios in tqdm.tqdm(sorted_sections, desc="Sections"):
         if len(scenarios) == 0:
             # no scenarios, continue to next section
             continue
@@ -143,11 +149,14 @@ def main() -> None:
                 fig_path,
             )
 
+            # Save scenario results
             df_result1["Section"].append(section_name)
             df_result1["HR_loc"].append(hr_loc)
             df_result1["Scenario"].append(scen_name)
             df_result1["Scenario_weight"].append(scen_prob)
             df_result1["Scenario_Pf"].append(result.pf)
+            df_result1["Scenario_alpha_R"].append(result.alpha[0])
+            df_result1["Scenario_alpha_S"].append(result.alpha[1])
 
         # Assert that only a single unique HR location is used for each scenario
         hr_locs = set(hr_locs)
@@ -175,6 +184,12 @@ def main() -> None:
             water_levels,
             fig_path,
         )
+
+        # Save section results
+        for _ in scenarios:
+            df_result1["Section_Pf"].append(result.pf)
+            df_result1["Section_alpha_R"].append(result.alpha[0])
+            df_result1["Section_alpha_S"].append(result.alpha[1])
 
         # Save fragility curve plot
         fig, ax = plt.subplots(figsize=(8, 5), dpi=100)
