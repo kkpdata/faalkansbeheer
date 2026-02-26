@@ -326,6 +326,7 @@ class EventGraph(BaseModel, ABC):
             for i in range(1, len(fc_data)):
                 if fc_data[i] < fc_data[i - 1]:
                     fc_data[i] = fc_data[i - 1]
+        fc_data = np.clip(fc_data, 0, 1)
         fc_comb = pd.Series(index=levels, data=fc_data)
 
         return fc_comb, results
