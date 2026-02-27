@@ -83,6 +83,7 @@ def main() -> None:
 
     # Read all scenarios and structure them into sections
     sections = {}
+    meta_cols = []
     for p in dir_traject.rglob("*.xlsx", case_sensitive=False):
         if p.is_file() and not p.name.startswith("~$"):
             print(f"Loading scenario from {p}...")
@@ -96,20 +97,19 @@ def main() -> None:
                 meta_row.ScenarioKans,
                 meta_row.HR_locatie,
             )
+            meta_cols = pd.unique(np.array(meta_cols + eeg.metadata.df.columns.tolist())).tolist()
 
     # Parse scenarios grouped by section
-    df_result1 = {
-        "Section": [],
-        "HR_loc": [],
-        "Scenario": [],
-        "Scenario_weight": [],
-        "Scenario_Pf": [],
-        "Scenario_alpha_R": [],
-        "Scenario_alpha_S": [],
-        "Section_Pf": [],
-        "Section_alpha_R": [],
-        "Section_alpha_S": [],
-    }
+    df_result1 = {m: [] for m in meta_cols}
+    df_result1["Section"] = []
+    df_result1["Scenario_weight"] = []
+    df_result1["Scenario_Pf"] = []
+    df_result1["Scenario_alpha_R"] = []
+    df_result1["Scenario_alpha_S"] = []
+    df_result1["Section_Pf"] = []
+    df_result1["Section_alpha_R"] = []
+    df_result1["Section_alpha_S"] = []
+
     sorted_sections = sorted(sections.items(), key=lambda item: item[0])
     for section_name, scenarios in tqdm.tqdm(sorted_sections, desc="Sections"):
         if len(scenarios) == 0:
@@ -151,9 +151,9 @@ def main() -> None:
             )
 
             # Save scenario results
+            for metacol, metaval in eeg.metadata.df.iloc[0].items():
+                df_result1[metacol].append(metaval)
             df_result1["Section"].append(section_name)
-            df_result1["HR_loc"].append(hr_loc)
-            df_result1["Scenario"].append(scen_name)
             df_result1["Scenario_weight"].append(scen_prob)
             df_result1["Scenario_Pf"].append(result.pf)
             df_result1["Scenario_alpha_R"].append(result.alpha[0])
