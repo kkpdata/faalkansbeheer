@@ -54,6 +54,7 @@ class ExcelEventGraph(EventGraph):
     metadata: MetadataTable
     graph: nx.DiGraph
     graph_events: EventTable
+    freq_tables: dict[str, FrequencyTable]
 
     @classmethod
     def load(
@@ -91,6 +92,7 @@ class ExcelEventGraph(EventGraph):
             metadata=metadata,
             graph=digraph,
             graph_events=graph_events,
+            freq_tables=freq_tables,
         )
 
     @staticmethod
@@ -328,7 +330,7 @@ class ExcelEventGraph(EventGraph):
     def _find_tables(
         excel_path: Path,
         scenario_sheet: str,
-    ) -> tuple[MetadataTable, PathTable, EventTable, dict[str, FrequencyTable] | None]:
+    ) -> tuple[MetadataTable, PathTable, EventTable, dict[str, FrequencyTable]]:
         """Locate the metadata/path/event tables within the workbook.
 
         Parameters
