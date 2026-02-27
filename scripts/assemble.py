@@ -86,8 +86,12 @@ def main() -> None:
     meta_cols = []
     for p in dir_traject.rglob("*.xlsx", case_sensitive=False):
         if p.is_file() and not p.name.startswith("~$"):
-            print(f"Loading scenario from {p}...")
-            eeg = ExcelEventGraph.load(p, scenario_name)
+            try:
+                eeg = ExcelEventGraph.load(p, scenario_name)
+            except Exception as e:
+                print(f"Error while loading '{p}':")
+                print(e)
+                continue
             meta_row = eeg.metadata.df.iloc[0]
             section_name = f"{meta_row.TRAJECT_ID}_{meta_row.dijkvaknummer:03d}_{meta_row.Vaknaam}"
             if section_name not in sections:
