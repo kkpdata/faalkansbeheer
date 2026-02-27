@@ -179,9 +179,10 @@ def main() -> None:
                 end_fc = fc.cumulative_probabilities.iloc[:, -1]
                 endnode_name = eeg.graph.nodes[end_fc.name]["description"] + f" ({end_fc.name})"
                 if plot_beta:
-                    df_fc_paths[endnode_name] = beta_from_pf(end_fc.to_numpy())
+                    df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(end_fc.to_numpy())
                 else:
-                    df_fc_paths[endnode_name] = end_fc.to_numpy()
+                    df_fc_paths[f"path: {endnode_name}"] = end_fc.to_numpy()
+            df_fc_paths[f"scenario: {scen_name}"] = beta_from_pf(pfs) if plot_beta else pfs
             df_fc_paths = pd.DataFrame(df_fc_paths, index=water_levels)
 
             # Save failure path fragility curves for this scenario
