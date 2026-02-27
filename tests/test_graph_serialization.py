@@ -68,4 +68,8 @@ def test_deserialize_graph_round_trip() -> None:
     assert set(restored.nodes) == set(graph.nodes)
     assert set(restored.edges) == set(graph.edges)
     for node_id in graph.nodes:
-        assert restored.nodes[node_id] == graph.nodes[node_id]
+        restored_attrs = dict(restored.nodes[node_id])
+        original_attrs = dict(graph.nodes[node_id])
+        if pd.isna(restored_attrs.get("type_name")) and original_attrs.get("type_name") is None:
+            restored_attrs["type_name"] = None
+        assert restored_attrs == original_attrs

@@ -14,6 +14,9 @@ from failure_paths import SqliteEventGraph
 def build_metadata_table() -> MetadataTable:
     df_metadata = pd.DataFrame(
         {
+            "TRAJECT_ID": ["16-X"],
+            "M_VAN": [0.0],
+            "M_TOT": [100.0],
             "Ondergrondscenario": ["ScenarioA"],
             "ScenarioKans": [0.1],
             "LENGTE_VAK": [1.23],

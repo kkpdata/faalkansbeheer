@@ -19,6 +19,9 @@ def create_example_workbook(path: Path) -> None:
     ws.append(["metadata"])
     ws.append(
         [
+            "TRAJECT_ID",
+            "M_VAN",
+            "M_TOT",
             "Ondergrondscenario",
             "ScenarioKans",
             "LENGTE_VAK",
@@ -28,7 +31,7 @@ def create_example_workbook(path: Path) -> None:
             "TYPE_WATERKERING",
         ]
     )
-    ws.append(["ScenarioA", 0.1, 1.23, "HR01", 42, "Vak 42", "type"])
+    ws.append(["16-X", 0.0, 100.0, "ScenarioA", 0.1, 1.23, "HR01", 42, "Vak 42", "type"])
 
     # Path table
     ws.append(["faalpadschema"])
@@ -147,6 +150,9 @@ def test_excel_eventgraph_errors_on_missing_frequency_table(tmp_path: Path) -> N
     ws.append(["metadata"])
     ws.append(
         [
+            "TRAJECT_ID",
+            "M_VAN",
+            "M_TOT",
             "Ondergrondscenario",
             "ScenarioKans",
             "LENGTE_VAK",
@@ -156,7 +162,7 @@ def test_excel_eventgraph_errors_on_missing_frequency_table(tmp_path: Path) -> N
             "TYPE_WATERKERING",
         ]
     )
-    ws.append(["Scenario", 0.1, 1.0, "HR", 1, "Vak", "type"])
+    ws.append(["16-X", 0.0, 100.0, "Scenario", 0.1, 1.0, "HR", 1, "Vak", "type"])
 
     ws.append(["faalpadschema"])
     ws.append(

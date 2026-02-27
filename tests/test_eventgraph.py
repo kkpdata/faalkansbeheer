@@ -18,6 +18,9 @@ def build_dummy_graph() -> DummyEventGraph:
     metadata = MetadataTable.from_dataframe(
         pd.DataFrame(
             {
+                "TRAJECT_ID": ["16-X"],
+                "M_VAN": [0.0],
+                "M_TOT": [100.0],
                 "Ondergrondscenario": ["Scenario"],
                 "ScenarioKans": [0.2],
                 "LENGTE_VAK": [1.0],
@@ -50,6 +53,9 @@ def build_branching_graph() -> DummyEventGraph:
     metadata = MetadataTable.from_dataframe(
         pd.DataFrame(
             {
+                "TRAJECT_ID": ["16-X"],
+                "M_VAN": [0.0],
+                "M_TOT": [100.0],
                 "Ondergrondscenario": ["Scenario"],
                 "ScenarioKans": [0.2],
                 "LENGTE_VAK": [1.0],

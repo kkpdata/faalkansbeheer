@@ -40,6 +40,9 @@ CREATE_STATEMENTS: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS metadata (
         scenario_id INTEGER PRIMARY KEY,
+        TRAJECT_ID TEXT,
+        M_VAN REAL,
+        M_TOT REAL,
         dijkvaknummer INTEGER,
         Vaknaam TEXT,
         LENGTE_VAK REAL,
