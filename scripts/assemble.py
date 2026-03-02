@@ -198,6 +198,13 @@ def main() -> None:
             fig.savefig(fig_path / f"fc_scenario_{scen_name}.png", bbox_inches="tight")
             plt.close("all")
 
+            # Check that all metadata columns are present.
+            missing_metacols = set(meta_cols).difference(eeg.metadata.df.columns.tolist())
+            if len(missing_metacols) > 0:
+                raise ValueError(
+                    f"{section_name=} {scen_name=} misses the following metadata column(s): {missing_metacols}"
+                )
+
             # Save scenario results
             for metacol, metaval in eeg.metadata.df.iloc[0].items():
                 df_result1[metacol].append(metaval)
