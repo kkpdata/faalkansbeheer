@@ -63,9 +63,20 @@ def integrate_and_plot(
     fig, axs = plt.subplots(ncols=2, figsize=(12, 5), dpi=100)
     plot_integration_grid(integrator, ax=axs[0])
 
+    # Keep the internal water-level resolution, but ensure the outer bins include all failure samples.
+    hist_edges = np.asarray(water_levels, dtype=float).copy()
+    failure_levels = result.failure_water_levels()
+    if failure_levels is not None and failure_levels.size > 0:
+        level_min = float(np.min(failure_levels))
+        level_max = float(np.max(failure_levels))
+        if level_min < hist_edges[0]:
+            hist_edges[0] = np.nextafter(level_min, -np.inf)
+        if level_max > hist_edges[-1]:
+            hist_edges[-1] = np.nextafter(level_max, np.inf)
+
     # visualize failure probability distribution over water levels
     _, _, hist_data = plot_failure_histogram(
-        result, water_levels, ax=axs[1], conditional=False, solicitation_distribution=integrator.s_distribution
+        result, hist_edges, ax=axs[1], conditional=False, solicitation_distribution=integrator.s_distribution
     )
     if scen_name == "combined":
         fig.savefig(fig_path / f"int_section_{scen_name}.png", bbox_inches="tight")
