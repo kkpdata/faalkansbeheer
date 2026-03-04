@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wl-max", type=float, default=10.0)
     parser.add_argument("--wl-count", type=int, default=101)
     parser.add_argument("--plot-beta", type=bool, default=True)
+    parser.add_argument("--beta-inf-substitute", type=float, default=None)
     return parser.parse_args()
 
 
@@ -96,6 +97,7 @@ def main() -> None:
     scenario_name = args.scenario_name
     water_levels = np.linspace(args.wl_min, args.wl_max, args.wl_count)
     plot_beta = args.plot_beta
+    beta_inf_sub = args.beta_inf_substitute
 
     # Read all scenarios and structure them into sections
     sections = {}
@@ -174,7 +176,7 @@ def main() -> None:
             df_fc_paths = {}
             for table_name, table in eeg.freq_tables.items():
                 df_freq = table.df.sort_values("h")
-                df_freq["Beta_h"] = beta_from_pf(df_freq.Pf_h.to_numpy())
+                df_freq["Beta_h"] = beta_from_pf(df_freq.Pf_h.to_numpy(), inf_substitute=beta_inf_sub)
                 if len(table.df) == 1:
                     beta_vals = np.full(water_levels.shape, df_freq.Beta_h.iat[0])
                 elif len(table.df) > 1:
@@ -190,10 +192,10 @@ def main() -> None:
                 end_fc = fc.cumulative_probabilities.iloc[:, -1]
                 endnode_name = eeg.graph.nodes[end_fc.name]["description"] + f" ({end_fc.name})"
                 if plot_beta:
-                    df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(end_fc.to_numpy())
+                    df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(end_fc.to_numpy(), inf_substitute=beta_inf_sub)
                 else:
                     df_fc_paths[f"path: {endnode_name}"] = end_fc.to_numpy()
-            df_fc_paths[f"scenario: {scen_name}"] = beta_from_pf(pfs) if plot_beta else pfs
+            df_fc_paths[f"scenario: {scen_name}"] = beta_from_pf(pfs, inf_substitute=beta_inf_sub) if plot_beta else pfs
             df_fc_paths = pd.DataFrame(df_fc_paths, index=water_levels)
 
             # Save failure path fragility curves for this scenario
@@ -263,7 +265,7 @@ def main() -> None:
         df_plot_fc = pd.DataFrame(df_plot_fc).set_index("water level")
         if plot_beta:
             for c in df_plot_fc.columns:
-                df_plot_fc[c] = beta_from_pf(df_plot_fc[c].to_numpy())
+                df_plot_fc[c] = beta_from_pf(df_plot_fc[c].to_numpy(), inf_substitute=beta_inf_sub)
         df_plot_fc.plot(ax=ax, legend=True)
         if plot_beta:
             ax.set_ylabel("$\\beta$")
