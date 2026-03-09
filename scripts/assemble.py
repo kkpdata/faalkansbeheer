@@ -149,7 +149,7 @@ def main() -> None:
         df_plot_fc = {"water level": water_levels}
         for scen_name, (eeg, scen_prob, hr_loc) in tqdm.tqdm(scenarios.items(), leave=False, desc="Scenarios"):
             # Save tree plot
-            eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=3)
+            eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
 
             # Get combined scenario fragility curve
             fc_comb, fcs = eeg.get_failure_path_probabilities(water_levels=water_levels)
@@ -234,7 +234,7 @@ def main() -> None:
 
         # Assert that the scenario probabilities sum to 1
         if not np.isclose(sum(scen_probs), 1):
-            raise ValueError("Scenario probabilities must sum to 1")
+            raise ValueError(f"Scenario probabilities must sum to 1 for section '{section_name}'")
 
         # Get combined section fragility curve
         fc_section = np.hstack(fc_section)

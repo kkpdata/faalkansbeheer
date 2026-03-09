@@ -17,17 +17,16 @@ from failure_paths import ExcelEventGraph
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Assemble and integrate scenario fragility curves.")
-    parser.add_argument(
-        "--hr-path", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-1_hr/WBI2017_Benedenrijn_16-1_v04")
-    )
+    parser.add_argument("--hr-path", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-1_hr/WBI2017_Benedenrijn_16-1_v04"))
     parser.add_argument("--hr-calname", default="ws")
-    parser.add_argument("--dir-traject", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-1"))
+    parser.add_argument("--dir-traject", type=Path, default=Path("C:/Users/SAKA/Waterschap Rivierenland/Beoordeling Primaire Keringen - LBO2 - 3_Project/Gedeelde informatie/Opleverdossier/99 Assemblage 16-1"))
     parser.add_argument("--output-folder", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-1_output"))
     parser.add_argument("--scenario-name", default="scenario1")
     parser.add_argument("--wl-min", type=float, default=0.0)
     parser.add_argument("--wl-max", type=float, default=10.0)
     parser.add_argument("--wl-count", type=int, default=101)
-    parser.add_argument("--plot-beta", type=bool, default=False)
+    parser.add_argument("--plot-beta", type=bool, default=True)
+    parser.add_argument("--beta-inf-substitute", type=float, default=None)
     return parser.parse_args()
 
 
@@ -65,9 +64,20 @@ def integrate_and_plot(
     fig, axs = plt.subplots(ncols=2, figsize=(12, 5), dpi=100)
     plot_integration_grid(integrator, ax=axs[0])
 
+    # Keep the internal water-level resolution, but ensure the outer bins include all failure samples.
+    hist_edges = np.asarray(water_levels, dtype=float).copy()
+    failure_levels = result.failure_water_levels()
+    if failure_levels is not None and failure_levels.size > 0:
+        level_min = float(np.min(failure_levels))
+        level_max = float(np.max(failure_levels))
+        if level_min < hist_edges[0]:
+            hist_edges[0] = np.nextafter(level_min, -np.inf)
+        if level_max > hist_edges[-1]:
+            hist_edges[-1] = np.nextafter(level_max, np.inf)
+
     # visualize failure probability distribution over water levels
     _, _, hist_data = plot_failure_histogram(
-        result, water_levels, ax=axs[1], conditional=False, solicitation_distribution=integrator.s_distribution
+        result, hist_edges, ax=axs[1], conditional=False, solicitation_distribution=integrator.s_distribution
     )
     if scen_name == "combined":
         fig.savefig(fig_path / f"int_section_{scen_name}.png", bbox_inches="tight")
@@ -87,6 +97,7 @@ def main() -> None:
     scenario_name = args.scenario_name
     water_levels = np.linspace(args.wl_min, args.wl_max, args.wl_count)
     plot_beta = args.plot_beta
+    beta_inf_sub = args.beta_inf_substitute
 
     # Read all scenarios and structure them into sections
     sections = {}
@@ -94,7 +105,6 @@ def main() -> None:
     for p in dir_traject.rglob("*.xlsx", case_sensitive=False):
         if p.is_file() and not p.name.startswith("~$"):
             try:
-                print(f"Loading '{p}'...")
                 eeg = ExcelEventGraph.load(p, scenario_name)
             except Exception as e:
                 print(f"Error while loading '{p}':")
@@ -111,6 +121,7 @@ def main() -> None:
             )
             meta_cols = pd.unique(np.array(meta_cols + eeg.metadata.df.columns.tolist())).tolist()
 
+    print(f"Parsed {len(sections)} sections")
     # Parse scenarios grouped by section
     df_result1 = {m: [] for m in meta_cols}
     df_result1["Section"] = []
@@ -138,8 +149,9 @@ def main() -> None:
         scen_probs = []
         df_plot_fc = {"water level": water_levels}
         for scen_name, (eeg, scen_prob, hr_loc) in tqdm.tqdm(scenarios.items(), leave=False, desc="Scenarios"):
+            print(f"Processing section '{section_name}', scenario '{scen_name}'")
             # Save tree plot
-            eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=3)
+            eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
 
             # Get combined scenario fragility curve
             fc_comb, fcs = eeg.get_failure_path_probabilities(water_levels=water_levels)
@@ -166,7 +178,7 @@ def main() -> None:
             df_fc_paths = {}
             for table_name, table in eeg.freq_tables.items():
                 df_freq = table.df.sort_values("h")
-                df_freq["Beta_h"] = beta_from_pf(df_freq.Pf_h.to_numpy())
+                df_freq["Beta_h"] = beta_from_pf(df_freq.Pf_h.to_numpy(), inf_substitute=beta_inf_sub)
                 if len(table.df) == 1:
                     beta_vals = np.full(water_levels.shape, df_freq.Beta_h.iat[0])
                 elif len(table.df) > 1:
@@ -182,10 +194,10 @@ def main() -> None:
                 end_fc = fc.cumulative_probabilities.iloc[:, -1]
                 endnode_name = eeg.graph.nodes[end_fc.name]["description"] + f" ({end_fc.name})"
                 if plot_beta:
-                    df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(end_fc.to_numpy())
+                    df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(end_fc.to_numpy(), inf_substitute=beta_inf_sub)
                 else:
                     df_fc_paths[f"path: {endnode_name}"] = end_fc.to_numpy()
-            df_fc_paths[f"scenario: {scen_name}"] = beta_from_pf(pfs) if plot_beta else pfs
+            df_fc_paths[f"scenario: {scen_name}"] = beta_from_pf(pfs, inf_substitute=beta_inf_sub) if plot_beta else pfs
             df_fc_paths = pd.DataFrame(df_fc_paths, index=water_levels)
 
             # Save failure path fragility curves for this scenario
@@ -200,6 +212,13 @@ def main() -> None:
             ax.grid()
             fig.savefig(fig_path / f"fc_scenario_{scen_name}.png", bbox_inches="tight")
             plt.close("all")
+
+            # Check that all metadata columns are present.
+            missing_metacols = set(meta_cols).difference(eeg.metadata.df.columns.tolist())
+            if len(missing_metacols) > 0:
+                raise ValueError(
+                    f"{section_name=} {scen_name=} misses the following metadata column(s): {missing_metacols}"
+                )
 
             # Save scenario results
             for metacol, metaval in eeg.metadata.df.iloc[0].items():
@@ -217,7 +236,7 @@ def main() -> None:
 
         # Assert that the scenario probabilities sum to 1
         if not np.isclose(sum(scen_probs), 1):
-            raise ValueError("Scenario probabilities must sum to 1")
+            raise ValueError(f"Scenario probabilities must sum to 1 for section '{section_name}'")
 
         # Get combined section fragility curve
         fc_section = np.hstack(fc_section)
@@ -248,7 +267,7 @@ def main() -> None:
         df_plot_fc = pd.DataFrame(df_plot_fc).set_index("water level")
         if plot_beta:
             for c in df_plot_fc.columns:
-                df_plot_fc[c] = beta_from_pf(df_plot_fc[c].to_numpy())
+                df_plot_fc[c] = beta_from_pf(df_plot_fc[c].to_numpy(), inf_substitute=beta_inf_sub)
         df_plot_fc.plot(ax=ax, legend=True)
         if plot_beta:
             ax.set_ylabel("$\\beta$")
