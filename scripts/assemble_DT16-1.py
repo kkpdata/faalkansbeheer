@@ -236,7 +236,7 @@ def main() -> None:
 
         # Assert that the scenario probabilities sum to 1
         if not np.isclose(sum(scen_probs), 1):
-            raise ValueError("Scenario probabilities must sum to 1")
+            raise ValueError(f"Scenario probabilities must sum to 1 for section '{section_name}'")
 
         # Get combined section fragility curve
         fc_section = np.hstack(fc_section)
