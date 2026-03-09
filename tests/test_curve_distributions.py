@@ -1,5 +1,7 @@
 import numpy as np
-from failure_paths.common.interp import LinearInterpolator
+import pytest
+from failure_paths.common.interp import LinearInterpolator, interpolate_beta_curve
+from failure_paths.common.prob import INTERPOLATION_BETA_CAP, pf_from_beta
 from failure_paths.reliability.curve_distributions import (
     FragilityDerivedDistribution,
     HazardDerivedDistribution,
@@ -66,3 +68,23 @@ def test_linear_interpolator_plateau_inverse() -> None:
     expected_levels = np.array([1.5, 3.0, 3.5])
     result = interpolator.value(beta_query)
     assert np.allclose(result, expected_levels)
+
+
+def test_interpolate_beta_curve_handles_infinite_knots_and_tails() -> None:
+    levels = np.array([3.0, 3.000001])
+    beta_knots = np.array([np.inf, -np.inf])
+    query = np.array([2.999, 3.0, 3.0000005, 3.000001, 3.001])
+
+    beta_values = interpolate_beta_curve(
+        levels,
+        beta_knots,
+        query,
+        beta_cap=INTERPOLATION_BETA_CAP,
+    )
+    pf_values = pf_from_beta(beta_values, tail="upper")
+
+    assert pf_values[0] == pytest.approx(0.0)
+    assert pf_values[1] == pytest.approx(0.0)
+    assert pf_values[2] == pytest.approx(0.5)
+    assert pf_values[3] == pytest.approx(1.0)
+    assert pf_values[4] == pytest.approx(1.0)

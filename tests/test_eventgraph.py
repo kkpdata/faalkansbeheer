@@ -218,3 +218,31 @@ def test_get_failure_path_probabilities_multiple_levels() -> None:
         cum_df.to_numpy()[:, 1:],
         np.cumprod(matrix.to_numpy()[:, 1:], axis=1),
     )
+
+
+def test_get_failure_path_probabilities_near_vertical_curve_end_to_end() -> None:
+    dummy = build_dummy_graph()
+    h_low = 3.0
+    h_high = 3.000001
+    h_mid = (h_low + h_high) / 2.0
+    dummy.graph_events = EventTable.from_dataframe(
+        pd.DataFrame(
+            {
+                "Faalpad_ID": [1, 1],
+                "Knoop_ID": [1, 1],
+                "h": [h_low, h_high],
+                "Pf_h": [0.0, 1.0],
+                "Beta_h": [np.nan, np.nan],
+            }
+        )
+    )
+
+    levels = [h_low, h_mid, h_high]
+    fc, results = dummy.get_failure_path_probabilities(levels)
+
+    np.testing.assert_allclose(fc.index.values, np.array(levels))
+    np.testing.assert_allclose(fc.to_numpy(), np.array([1.0e-300, 0.5, 1.0]))
+    matrix = results[0].node_probabilities
+    assert matrix.at[h_low, (1, 1)] == pytest.approx(0.0)
+    assert matrix.at[h_mid, (1, 1)] == pytest.approx(0.5)
+    assert matrix.at[h_high, (1, 1)] == pytest.approx(1.0)

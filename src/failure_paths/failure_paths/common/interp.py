@@ -114,3 +114,78 @@ class LinearInterpolator:
         # @TODO
         inverse_interp = LinearInterpolator(self._y_nodes, self._x_nodes)
         return inverse_interp.value(y_query)
+
+
+def interpolate_beta_curve(
+    x_nodes: np.ndarray | list[float],
+    beta_nodes: np.ndarray | list[float],
+    x_query: np.ndarray | float,
+    *,
+    beta_cap: float,
+    preserve_exact_knots: bool = True,
+    clamp_infinite_tails: bool = True,
+) -> np.ndarray | float:
+    """
+    Interpolate beta values robustly when knots may include +/-inf.
+
+    Parameters
+    ----------
+    x_nodes : np.ndarray | list[float]
+        Knot locations. Must be non-decreasing.
+    beta_nodes : np.ndarray | list[float]
+        Beta values at knot locations. May include +/-inf.
+    x_query : np.ndarray | float
+        Query coordinates where beta should be interpolated.
+    beta_cap : float
+        Finite cap used to replace +/-inf during interpolation.
+    preserve_exact_knots : bool, optional
+        Restore exact knot beta values after interpolation.
+    clamp_infinite_tails : bool, optional
+        Clamp outside-domain values to endpoint beta when the endpoint is infinite.
+
+    Returns
+    -------
+    np.ndarray | float
+        Interpolated beta values with the same shape as ``x_query``.
+
+    Raises
+    ------
+    ValueError
+        If ``x_nodes`` and ``beta_nodes`` lengths differ, or no knots are provided.
+    """
+    x_arr = np.asarray(x_nodes, dtype=float).reshape(-1)
+    b_arr = np.asarray(beta_nodes, dtype=float).reshape(-1)
+    if x_arr.size != b_arr.size:
+        raise ValueError("x_nodes and beta_nodes must have identical lengths.")
+    if x_arr.size == 0:
+        raise ValueError("At least one knot is required.")
+
+    is_scalar = np.isscalar(x_query)
+    q_arr = np.asarray(x_query, dtype=float)
+    q_flat = q_arr.reshape(-1)
+
+    if x_arr.size == 1:
+        out_flat = np.full(q_flat.shape, b_arr[0], dtype=float)
+    else:
+        interp_nodes = np.nan_to_num(b_arr, posinf=float(beta_cap), neginf=-float(beta_cap))
+        out_flat = np.asarray(LinearInterpolator(x_arr, interp_nodes).value(q_flat), dtype=float).reshape(-1)
+
+        if preserve_exact_knots:
+            idx = np.searchsorted(x_arr, q_flat, side="right") - 1
+            valid = idx >= 0
+            if np.any(valid):
+                positions = np.nonzero(valid)[0]
+                idx_valid = idx[valid]
+                exact = x_arr[idx_valid] == q_flat[valid]
+                out_flat[positions[exact]] = b_arr[idx_valid[exact]]
+
+        if clamp_infinite_tails:
+            if np.isinf(b_arr[0]):
+                out_flat[q_flat < x_arr[0]] = b_arr[0]
+            if np.isinf(b_arr[-1]):
+                out_flat[q_flat > x_arr[-1]] = b_arr[-1]
+
+    out = out_flat.reshape(q_arr.shape)
+    if is_scalar:
+        return float(out.reshape(-1)[0])
+    return out

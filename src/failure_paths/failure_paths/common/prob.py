@@ -133,6 +133,12 @@ def beta_from_pf(
     return betas
 
 
+# Shared defaults for stable interpolation when true 0/1 probabilities appear
+# in fragility curves and would otherwise map to +/-inf betas.
+INTERPOLATION_PROB_EPSILON = 1e-300
+INTERPOLATION_BETA_CAP = float(beta_from_pf(np.array([INTERPOLATION_PROB_EPSILON]), tail="upper")[0])
+
+
 def pf_from_beta(
     beta: np.ndarray | float,
     *,

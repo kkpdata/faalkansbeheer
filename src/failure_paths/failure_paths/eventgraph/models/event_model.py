@@ -8,8 +8,13 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import Series
 
-from ...common.interp import LinearInterpolator
-from ...common.prob import beta_from_pf, pf_from_beta
+from ...common.interp import interpolate_beta_curve
+from ...common.prob import (
+    INTERPOLATION_BETA_CAP,
+    INTERPOLATION_PROB_EPSILON,
+    beta_from_pf,
+    pf_from_beta,
+)
 from .table_model import TableModel
 
 
@@ -37,6 +42,8 @@ class EventTable(TableModel):
     schema_model: ClassVar[type[pa.DataFrameModel]] = EventSchema
     index_columns: ClassVar[tuple[str, ...]] = ("Faalpad_ID", "Knoop_ID")
     std_normal: ClassVar[ot.Normal] = ot.Normal()
+    interpolation_prob_epsilon: ClassVar[float] = INTERPOLATION_PROB_EPSILON
+    interpolation_beta_cap: ClassVar[float] = INTERPOLATION_BETA_CAP
 
     def get_event_ids(self) -> set[tuple[int, int]]:
         """Return the distinct ``(Faalpad_ID, Knoop_ID)`` combinations in the table."""
@@ -104,15 +111,23 @@ class EventTable(TableModel):
 
         h_array = np.asarray(h, dtype=float)
         if len(subset) == 1:
-            interp_vals = np.full(h_array.shape, subset.Beta_h.iat[0])
+            beta_vals = np.full(h_array.shape, subset.Beta_h.iat[0])
         else:
-            interpolator = LinearInterpolator(subset.h.to_numpy(), subset.Beta_h.to_numpy())
-            interp_vals = interpolator.value(h_array)
+            h_nodes = subset.h.to_numpy()
+            beta_nodes = subset.Beta_h.to_numpy()
+            beta_vals = interpolate_beta_curve(
+                h_nodes,
+                beta_nodes,
+                h_array,
+                beta_cap=float(self.interpolation_beta_cap),
+                preserve_exact_knots=True,
+                clamp_infinite_tails=True,
+            )
 
-        if not as_beta:
-            interp_vals = pf_from_beta(interp_vals, tail="upper")
+        if as_beta:
+            return beta_vals
 
-        return interp_vals
+        return pf_from_beta(beta_vals, tail="upper")
 
     @classmethod
     def _fill_beta_from_pf(cls, pf: pd.Series, beta: pd.Series) -> pd.Series:
