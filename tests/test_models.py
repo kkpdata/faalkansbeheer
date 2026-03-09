@@ -36,6 +36,20 @@ def test_event_table_duplicate_events_raise() -> None:
         EventTable.from_dataframe(df_event)
 
 
+def test_event_table_non_monotone_fragility_raises() -> None:
+    df_event = pd.DataFrame(
+        {
+            "Faalpad_ID": [1, 1, 1],
+            "Knoop_ID": [1, 1, 1],
+            "h": [0.0, 1.0, 2.0],
+            "Pf_h": [0.1, 0.05, 0.2],
+            "Beta_h": [np.nan, np.nan, np.nan],
+        }
+    )
+    with pytest.raises(ValueError, match="non-decreasing"):
+        EventTable.from_dataframe(df_event)
+
+
 def test_path_table_normalizes_inputs() -> None:
     df_path = pd.DataFrame(
         {
