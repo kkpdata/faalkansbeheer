@@ -121,6 +121,7 @@ def main() -> None:
             )
             meta_cols = pd.unique(np.array(meta_cols + eeg.metadata.df.columns.tolist())).tolist()
 
+    print(f"Parsed {len(sections)} sections")
     # Parse scenarios grouped by section
     df_result1 = {m: [] for m in meta_cols}
     df_result1["Section"] = []
@@ -148,6 +149,7 @@ def main() -> None:
         scen_probs = []
         df_plot_fc = {"water level": water_levels}
         for scen_name, (eeg, scen_prob, hr_loc) in tqdm.tqdm(scenarios.items(), leave=False, desc="Scenarios"):
+            print(f"Processing section '{section_name}', scenario '{scen_name}'")
             # Save tree plot
             eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
 
