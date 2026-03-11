@@ -11,7 +11,7 @@ from .curves import FragilityCurve, HazardCurve
 class IntegrationConfig(BaseModel):
     """Configuration container for reliability integration runs."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     r_distribution: Any | None = Field(None, description="Distribution of resistance R")
     s_distribution: Any | None = Field(None, description="Distribution of solicitation S")
@@ -24,7 +24,36 @@ class IntegrationConfig(BaseModel):
     u_min: float = Field(-10.0, description="Lower bound of the U-space integration range.")
     u_max: float = Field(10.0, description="Upper bound of the U-space integration range.")
     coarse_points: int = Field(101, ge=2, description="Number of U-grid edges (>=2).")
-    refine_factor: int = Field(20, ge=1, description="Per-dimension subdivision factor for mixed cells.")
+    adaptive_logpf_tol: float = Field(
+        1e-2,
+        gt=0.0,
+        description="Target tolerance for estimated log(Pf) error, i.e. log(1 + delta_pf / pf).",
+    )
+    adaptive_beta_tol: float = Field(
+        1e-3,
+        gt=0.0,
+        description="Stabilization tolerance on consecutive beta_pf estimates.",
+    )
+    adaptive_max_depth: int = Field(
+        8,
+        ge=0,
+        description="Maximum recursive depth for adaptive mixed-cell refinement.",
+    )
+    adaptive_split_factor: int = Field(
+        2,
+        ge=2,
+        description="Per-axis split factor applied when refining a mixed cell adaptively.",
+    )
+    adaptive_probe_factor: int = Field(
+        4,
+        ge=2,
+        description="Per-axis probe resolution used to estimate local mixed-cell error.",
+    )
+    adaptive_pf_floor: float = Field(
+        1e-300,
+        gt=0.0,
+        description="Numerical floor used when normalizing tiny failure probabilities in adaptive mode.",
+    )
 
     std_normal: ot.Normal = Field(default_factory=ot.Normal)
     hazard_curve: HazardCurve | None = Field(

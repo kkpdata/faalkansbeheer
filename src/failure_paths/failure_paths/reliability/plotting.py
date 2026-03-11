@@ -72,43 +72,29 @@ def plot_integration_grid(
     ax.vlines(grid.u1_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
     ax.hlines(grid.u2_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
 
-    if (
-        grid.subcell_fail_mask is not None
-        and grid.subcell_weights is not None
-        and grid.u1_sub_edges is not None
-        and grid.u2_sub_edges is not None
-    ):
-        for idx in range(grid.mixed_indices.shape[0]):
-            sub_values = np.where(grid.subcell_fail_mask[idx], 0.0, 1.0)
+    adaptive_cells, _, _, _ = integrator._adaptive_leaf_cells(grid)
+    if adaptive_cells:
+        adaptive_segments: list[list[tuple[float, float]]] = []
+        for cell in adaptive_cells:
+            value = 0.0 if cell.fail_estimate else 1.0
             ax.pcolormesh(
-                grid.u1_sub_edges[idx],
-                grid.u2_sub_edges[idx],
-                sub_values.T,
+                np.array([cell.u1_left, cell.u1_right]),
+                np.array([cell.u2_left, cell.u2_right]),
+                np.array([[value]]),
                 cmap=cmap,
                 norm=norm,
                 shading="auto",
                 zorder=2,
             )
-
-        refine_segments: list[list[tuple[float, float]]] = []
-        for idx, (i_cell, j_cell) in enumerate(grid.mixed_indices):
-            x_edges = grid.u1_sub_edges[idx]
-            y_edges = grid.u2_sub_edges[idx]
-            x_inner = x_edges[1:-1]
-            y_inner = y_edges[1:-1]
-
-            y_bottom = grid.u2_edges[j_cell]
-            y_top = grid.u2_edges[j_cell + 1]
-            for x in x_inner:
-                refine_segments.append([(x, y_bottom), (x, y_top)])
-
-            x_left = grid.u1_edges[i_cell]
-            x_right = grid.u1_edges[i_cell + 1]
-            for y in y_inner:
-                refine_segments.append([(x_left, y), (x_right, y)])
-
-        if refine_segments:
-            ax.add_collection(LineCollection(refine_segments, colors="#666666", linewidths=0.4, zorder=4))
+            adaptive_segments.extend(
+                [
+                    [(cell.u1_left, cell.u2_left), (cell.u1_right, cell.u2_left)],
+                    [(cell.u1_left, cell.u2_right), (cell.u1_right, cell.u2_right)],
+                    [(cell.u1_left, cell.u2_left), (cell.u1_left, cell.u2_right)],
+                    [(cell.u1_right, cell.u2_left), (cell.u1_right, cell.u2_right)],
+                ]
+            )
+        ax.add_collection(LineCollection(adaptive_segments, colors="#666666", linewidths=0.35, zorder=4))
 
     u_line = np.linspace(integrator.config.u_min, integrator.config.u_max, max(3, limit_points))
     u2_line = integrator._limit_state_curve(u_line)

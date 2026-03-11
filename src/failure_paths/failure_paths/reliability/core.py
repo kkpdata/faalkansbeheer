@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import heapq
 
 import numpy as np
 import openturns as ot
@@ -26,13 +27,24 @@ class _DistributionGridData:
     u1_center_grid: np.ndarray
     u2_center_grid: np.ndarray
     mixed_indices: np.ndarray
-    refine_factor: int
-    subcell_weights: np.ndarray | None = None
-    subcell_fail_mask: np.ndarray | None = None
-    u1_sub_mesh: np.ndarray | None = None
-    u2_sub_mesh: np.ndarray | None = None
-    u1_sub_edges: np.ndarray | None = None
-    u2_sub_edges: np.ndarray | None = None
+
+
+@dataclass
+class _AdaptiveCell:
+    """Adaptive mixed-cell state used for local error-driven refinement."""
+
+    u1_left: float
+    u1_right: float
+    u2_left: float
+    u2_right: float
+    weight: float
+    depth: int
+    center_u1: float
+    center_u2: float
+    mass_est: float
+    error_est: float
+    fail_estimate: bool
+    refinable: bool
 
 
 class ReliabilityIntegrator:
@@ -307,8 +319,10 @@ class ReliabilityIntegrator:
             If the U-grid configuration produces non-positive probability mass.
         """
         cfg = self.config
-        u1_edges = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
-        u2_edges = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
+        u1_levels = cfg.fragility_curve.hazard_levels if cfg.fragility_curve is not None else None
+        u2_levels = cfg.hazard_curve.hazard_levels if cfg.hazard_curve is not None else None
+        u1_edges = self._build_axis_edges(dist=self.r_distribution, curve_levels=u1_levels)
+        u2_edges = self._build_axis_edges(dist=self.s_distribution, curve_levels=u2_levels)
 
         u_s_max = None
         if cfg.max_solicitation_level is not None:
@@ -373,48 +387,6 @@ class ReliabilityIntegrator:
         cell_weights = u1_contrib[:, None] * u2_contrib[None, :]
 
         mixed_idx = np.argwhere(mixed_mask)
-        refine_factor = cfg.refine_factor
-
-        sub_weights = None
-        sub_fail = None
-        u1_sub_mesh = None
-        u2_sub_mesh = None
-        u1_sub_edges = None
-        u2_sub_edges = None
-
-        if mixed_idx.size > 0 and refine_factor > 0:
-            frac_edges = np.linspace(0.0, 1.0, refine_factor + 1)
-            frac_centers = 0.5 * (frac_edges[1:] + frac_edges[:-1])
-
-            u1_left = u1_edges[:-1][mixed_idx[:, 0]]
-            u1_right = u1_edges[1:][mixed_idx[:, 0]]
-            u2_left = u2_edges[:-1][mixed_idx[:, 1]]
-            u2_right = u2_edges[1:][mixed_idx[:, 1]]
-
-            u1_sub_edges = u1_left[:, None] + (u1_right - u1_left)[:, None] * frac_edges
-            u2_sub_edges = u2_left[:, None] + (u2_right - u2_left)[:, None] * frac_edges
-
-            cdf_u1_sub, surv_u1_sub = self._normal_probabilities(u1_sub_edges)
-            cdf_u2_sub, surv_u2_sub = self._normal_probabilities(u2_sub_edges)
-
-            sub_prob_u1 = self._u_interval_probabilities(u1_sub_edges, cdf_u1_sub, surv_u1_sub)
-            sub_prob_u2 = self._u_interval_probabilities(u2_sub_edges, cdf_u2_sub, surv_u2_sub)
-            sub_weights = sub_prob_u1[:, :, None] * sub_prob_u2[:, None, :]
-
-            u1_sub_centers = u1_left[:, None] + (u1_right - u1_left)[:, None] * frac_centers
-            u2_sub_centers = u2_left[:, None] + (u2_right - u2_left)[:, None] * frac_centers
-
-            u1_sub_mesh = np.broadcast_to(
-                u1_sub_centers[:, :, None],
-                (mixed_idx.shape[0], refine_factor, refine_factor),
-            )
-            u2_sub_mesh = np.broadcast_to(
-                u2_sub_centers[:, None, :],
-                (mixed_idx.shape[0], refine_factor, refine_factor),
-            )
-
-            z_sub = self.evaluate_limit_state(u1_sub_mesh, u2_sub_mesh)
-            sub_fail = z_sub <= 0.0
 
         return _DistributionGridData(
             u1_edges=u1_edges,
@@ -428,14 +400,81 @@ class ReliabilityIntegrator:
             u1_center_grid=u1_center_grid,
             u2_center_grid=u2_center_grid,
             mixed_indices=mixed_idx,
-            refine_factor=refine_factor,
-            subcell_weights=sub_weights,
-            subcell_fail_mask=sub_fail,
-            u1_sub_mesh=u1_sub_mesh,
-            u2_sub_mesh=u2_sub_mesh,
-            u1_sub_edges=u1_sub_edges,
-            u2_sub_edges=u2_sub_edges,
         )
+
+    def _build_axis_edges(
+        self,
+        dist: ot.Distribution,
+        curve_levels: np.ndarray | None,
+    ) -> np.ndarray:
+        """Build axis edges from mandatory knot edges plus regular fill-in."""
+        cfg = self.config
+        mandatory = np.array([cfg.u_min, cfg.u_max], dtype=float)
+        mapped_knots = self._map_curve_levels_to_u_edges(dist=dist, levels=curve_levels)
+        if mapped_knots.size > 0:
+            mandatory = np.r_[mandatory, mapped_knots]
+        mandatory_edges = np.sort(np.unique(mandatory))
+
+        if mandatory_edges.size >= cfg.coarse_points:
+            # Keep all mandatory edges; do not downsample knot-aligned boundaries.
+            return mandatory_edges
+
+        n_extra = int(cfg.coarse_points - mandatory_edges.size)
+        regular = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
+        regular_pool = regular[~np.isin(regular, mandatory_edges)]
+        if regular_pool.size == 0 or n_extra <= 0:
+            return mandatory_edges
+
+        if n_extra >= regular_pool.size:
+            extras = regular_pool
+        else:
+            # Spread extra regular edges over the available range.
+            raw = np.linspace(0, regular_pool.size - 1, n_extra)
+            idx = np.unique(np.round(raw).astype(int))
+            if idx.size < n_extra:
+                missing = n_extra - idx.size
+                remaining = np.setdiff1d(np.arange(regular_pool.size), idx, assume_unique=False)
+                idx = np.r_[idx, remaining[:missing]]
+                idx = np.sort(idx.astype(int))
+            extras = regular_pool[idx]
+
+        return np.sort(np.unique(np.r_[mandatory_edges, extras]))
+
+    def _map_curve_levels_to_u_edges(
+        self,
+        dist: ot.Distribution,
+        levels: np.ndarray | None,
+    ) -> np.ndarray:
+        """Map curve hazard-level knots to interior U-space edges."""
+        if levels is None:
+            return np.array([], dtype=float)
+
+        level_arr = np.asarray(levels, dtype=float).reshape(-1)
+        if level_arr.size == 0:
+            return np.array([], dtype=float)
+
+        level_arr = level_arr[np.isfinite(level_arr)]
+        if level_arr.size == 0:
+            return np.array([], dtype=float)
+
+        cdf = np.array(dist.computeCDF(level_arr[:, np.newaxis])).reshape(-1)
+        survival = np.array(dist.computeSurvivalFunction(level_arr[:, np.newaxis])).reshape(-1)
+        cdf = np.clip(cdf, 0.0, 1.0)
+        survival = np.clip(survival, 0.0, 1.0)
+
+        u_from_cdf = beta_from_pf(cdf, tail="lower")
+        u_from_survival = beta_from_pf(survival, tail="upper")
+        u_candidates = np.where(np.isfinite(u_from_cdf), u_from_cdf, u_from_survival)
+        u_candidates = np.asarray(u_candidates, dtype=float)
+        if u_candidates.size == 0:
+            return np.array([], dtype=float)
+
+        cfg = self.config
+        in_range = np.isfinite(u_candidates) & (u_candidates > cfg.u_min) & (u_candidates < cfg.u_max)
+        if not np.any(in_range):
+            return np.array([], dtype=float)
+
+        return np.sort(np.unique(u_candidates[in_range]))
 
     def _limit_state_curve(self, u_values: np.ndarray) -> np.ndarray:
         """Return U-space coordinates of the z=0 curve for supplied R-axis samples.
@@ -477,52 +516,266 @@ class ReliabilityIntegrator:
 
         return u2_vals
 
-    # Distribution-based implementation
-    def _integrate_distributions(self) -> FailureSamples:
-        """Integrate probability mass over the U-grid in distribution space.
+    def _adaptive_probe_mass(
+        self,
+        u1_left: float,
+        u1_right: float,
+        u2_left: float,
+        u2_right: float,
+        split_factor: int,
+    ) -> float:
+        """Estimate cell failure mass by splitting and classifying subcell centers."""
+        u1_sub_edges = np.linspace(u1_left, u1_right, split_factor + 1)
+        u2_sub_edges = np.linspace(u2_left, u2_right, split_factor + 1)
 
-        Returns
-        -------
-        FailureSamples
-            Weighted failure cells after optional refinement.
-        """
+        cdf_u1_sub, surv_u1_sub = self._normal_probabilities(u1_sub_edges)
+        cdf_u2_sub, surv_u2_sub = self._normal_probabilities(u2_sub_edges)
+        sub_prob_u1 = self._u_interval_probabilities(u1_sub_edges, cdf_u1_sub, surv_u1_sub)
+        sub_prob_u2 = self._u_interval_probabilities(u2_sub_edges, cdf_u2_sub, surv_u2_sub)
+        sub_weights = sub_prob_u1[:, None] * sub_prob_u2[None, :]
+        u1_sub_centers = 0.5 * (u1_sub_edges[1:] + u1_sub_edges[:-1])
+        u2_sub_centers = 0.5 * (u2_sub_edges[1:] + u2_sub_edges[:-1])
+        u1_sub_mesh, u2_sub_mesh = np.meshgrid(u1_sub_centers, u2_sub_centers, indexing="ij")
+        z_sub = self.evaluate_limit_state(u1_sub_mesh, u2_sub_mesh)
+        return float(sub_weights[z_sub <= 0.0].sum())
+
+    def _cell_failure_bounds(
+        self,
+        u1_left: float,
+        u1_right: float,
+        u2_left: float,
+        u2_right: float,
+    ) -> tuple[float, float]:
+        """Return z_min/z_max bounds for a single cell."""
+        u1_edges = np.array([u1_left, u1_right], dtype=float)
+        u2_edges = np.array([u2_left, u2_right], dtype=float)
+
+        u1_edges_cdf, u1_edges_survival = self._normal_probabilities(u1_edges)
+        u2_edges_cdf, u2_edges_survival = self._normal_probabilities(u2_edges)
+        r_edges = self._map_u_to_distribution(
+            u1_edges,
+            self.r_distribution,
+            u_values_cdf=u1_edges_cdf,
+            u_values_survival=u1_edges_survival,
+        )
+        s_edges = self._map_u_to_distribution(
+            u2_edges,
+            self.s_distribution,
+            u_values_cdf=u2_edges_cdf,
+            u_values_survival=u2_edges_survival,
+        )
+        z_min = float(r_edges[0] - s_edges[1])
+        z_max = float(r_edges[1] - s_edges[0])
+        return z_min, z_max
+
+    def _build_adaptive_cell(
+        self,
+        u1_left: float,
+        u1_right: float,
+        u2_left: float,
+        u2_right: float,
+        weight: float,
+        depth: int,
+    ) -> _AdaptiveCell:
+        """Construct an adaptive cell with center estimate and local error probe."""
+        center_u1 = 0.5 * (u1_left + u1_right)
+        center_u2 = 0.5 * (u2_left + u2_right)
+        z_min, z_max = self._cell_failure_bounds(u1_left, u1_right, u2_left, u2_right)
+
+        if z_max <= 0.0:
+            return _AdaptiveCell(
+                u1_left=u1_left,
+                u1_right=u1_right,
+                u2_left=u2_left,
+                u2_right=u2_right,
+                weight=float(weight),
+                depth=depth,
+                center_u1=center_u1,
+                center_u2=center_u2,
+                mass_est=float(weight),
+                error_est=0.0,
+                fail_estimate=True,
+                refinable=False,
+            )
+        if z_min >= 0.0:
+            return _AdaptiveCell(
+                u1_left=u1_left,
+                u1_right=u1_right,
+                u2_left=u2_left,
+                u2_right=u2_right,
+                weight=float(weight),
+                depth=depth,
+                center_u1=center_u1,
+                center_u2=center_u2,
+                mass_est=0.0,
+                error_est=0.0,
+                fail_estimate=False,
+                refinable=False,
+            )
+
+        z_center = float(
+            self.evaluate_limit_state(
+                np.array([center_u1], dtype=float),
+                np.array([center_u2], dtype=float),
+            )[0]
+        )
+        fail_estimate = z_center <= 0.0
+        center_mass = float(weight) if fail_estimate else 0.0
+        probe_mass = self._adaptive_probe_mass(
+            u1_left=u1_left,
+            u1_right=u1_right,
+            u2_left=u2_left,
+            u2_right=u2_right,
+            split_factor=self.config.adaptive_probe_factor,
+        )
+        # Use probe mass as the mixed-cell estimate; center mass remains the
+        # lower-order reference for the local error proxy.
+        mass_est = float(probe_mass)
+        error_est = float(abs(probe_mass - center_mass))
+        if error_est == 0.0:
+            # Probe and center can alias on thin mixed-cell slivers (both 0 or both
+            # full mass). Keep a conservative local uncertainty so adaptive splitting
+            # continues until corner bounds isolate the boundary.
+            error_est = float(weight)
+        refinable = depth < self.config.adaptive_max_depth and error_est > 0.0
+        return _AdaptiveCell(
+            u1_left=u1_left,
+            u1_right=u1_right,
+            u2_left=u2_left,
+            u2_right=u2_right,
+            weight=float(weight),
+            depth=depth,
+            center_u1=center_u1,
+            center_u2=center_u2,
+            mass_est=mass_est,
+            error_est=error_est,
+            fail_estimate=fail_estimate,
+            refinable=refinable,
+        )
+
+    def _split_adaptive_cell(self, cell: _AdaptiveCell) -> list[_AdaptiveCell]:
+        """Split an adaptive cell and evaluate child estimates."""
+        split_factor = self.config.adaptive_split_factor
+        u1_edges = np.linspace(cell.u1_left, cell.u1_right, split_factor + 1)
+        u2_edges = np.linspace(cell.u2_left, cell.u2_right, split_factor + 1)
+        u1_edges_cdf, u1_edges_survival = self._normal_probabilities(u1_edges)
+        u2_edges_cdf, u2_edges_survival = self._normal_probabilities(u2_edges)
+        u1_probs = self._u_interval_probabilities(u1_edges, u1_edges_cdf, u1_edges_survival)
+        u2_probs = self._u_interval_probabilities(u2_edges, u2_edges_cdf, u2_edges_survival)
+
+        children: list[_AdaptiveCell] = []
+        for i in range(split_factor):
+            for j in range(split_factor):
+                child_weight = float(u1_probs[i] * u2_probs[j])
+                if child_weight <= 0.0:
+                    continue
+                children.append(
+                    self._build_adaptive_cell(
+                        u1_left=float(u1_edges[i]),
+                        u1_right=float(u1_edges[i + 1]),
+                        u2_left=float(u2_edges[j]),
+                        u2_right=float(u2_edges[j + 1]),
+                        weight=child_weight,
+                        depth=cell.depth + 1,
+                    )
+                )
+        return children
+
+    def _adaptive_leaf_cells(
+        self,
+        grid: _DistributionGridData,
+    ) -> tuple[list[_AdaptiveCell], bool, int, float]:
+        """Refine mixed cells adaptively and return final leaf cells with diagnostics."""
+        cfg = self.config
+        active_cells: dict[int, _AdaptiveCell] = {}
+        heap: list[tuple[float, int]] = []
+        next_id = 0
+        for i, j in grid.mixed_indices:
+            weight = float(grid.cell_weights[i, j])
+            if weight <= 0.0:
+                continue
+            cell = self._build_adaptive_cell(
+                u1_left=float(grid.u1_edges[i]),
+                u1_right=float(grid.u1_edges[i + 1]),
+                u2_left=float(grid.u2_edges[j]),
+                u2_right=float(grid.u2_edges[j + 1]),
+                weight=weight,
+                depth=0,
+            )
+            active_cells[next_id] = cell
+            if cell.refinable:
+                heapq.heappush(heap, (-cell.error_est, next_id))
+            next_id += 1
+
+        coarse_pf = float(grid.cell_weights[grid.fail_mask].sum())
+        mixed_pf = float(sum(cell.mass_est for cell in active_cells.values()))
+        remaining_error = max(0.0, float(sum(cell.error_est for cell in active_cells.values())))
+        iterations = 0
+        prev_pf: float | None = None
+        converged = False
+
+        while True:
+            pf_est = coarse_pf + mixed_pf
+            denom = max(pf_est, cfg.adaptive_pf_floor)
+            target_abs = (float(np.exp(cfg.adaptive_logpf_tol)) - 1.0) * denom
+            beta_stable = True
+            if prev_pf is not None:
+                beta_prev = float(beta_from_pf(max(prev_pf, cfg.adaptive_pf_floor), tail="upper"))
+                beta_curr = float(beta_from_pf(denom, tail="upper"))
+                beta_stable = abs(beta_curr - beta_prev) <= cfg.adaptive_beta_tol
+
+            if remaining_error <= target_abs and beta_stable:
+                converged = True
+                break
+
+            if not heap:
+                break
+
+            _, cell_id = heapq.heappop(heap)
+            cell = active_cells.get(cell_id)
+            if cell is None or not cell.refinable:
+                continue
+
+            prev_pf = pf_est
+            del active_cells[cell_id]
+            children = self._split_adaptive_cell(cell)
+            mixed_pf += -cell.mass_est + float(sum(child.mass_est for child in children))
+            remaining_error = max(
+                0.0,
+                remaining_error + (-cell.error_est + float(sum(child.error_est for child in children))),
+            )
+            for child in children:
+                active_cells[next_id] = child
+                if child.refinable:
+                    heapq.heappush(heap, (-child.error_est, next_id))
+                next_id += 1
+            iterations += 1
+
+        return list(active_cells.values()), converged, iterations, remaining_error
+
+    def _integrate_distributions_adaptive(self) -> FailureSamples:
+        """Integrate failure mass with adaptive mixed-cell refinement."""
+        cfg = self.config
         grid = self._compute_distribution_grid()
 
         w_fail_coarse = grid.cell_weights[grid.fail_mask]
         u1_fail_coarse = grid.u1_center_grid[grid.fail_mask]
         u2_fail_coarse = grid.u2_center_grid[grid.fail_mask]
 
-        w_fail_refined: list[np.ndarray] = []
-        u1_fail_refined: list[np.ndarray] = []
-        u2_fail_refined: list[np.ndarray] = []
-        refined_fail_cells = 0
+        adaptive_cells, converged, iterations, remaining_error = self._adaptive_leaf_cells(grid)
 
-        if (
-            grid.mixed_indices.size > 0
-            and grid.refine_factor > 0
-            and grid.subcell_fail_mask is not None
-            and grid.subcell_weights is not None
-            and grid.u1_sub_mesh is not None
-            and grid.u2_sub_mesh is not None
-        ):
-            fail_sub = grid.subcell_fail_mask
-            refined_fail_cells = int(np.count_nonzero(fail_sub))
-
-            if np.any(fail_sub):
-                w_fail_refined.append(grid.subcell_weights[fail_sub])
-                u1_fail_refined.append(grid.u1_sub_mesh[fail_sub])
-                u2_fail_refined.append(grid.u2_sub_mesh[fail_sub])
+        w_fail_adaptive = [np.array([cell.mass_est], dtype=float) for cell in adaptive_cells if cell.mass_est > 0.0]
+        u1_fail_adaptive = [np.array([cell.center_u1], dtype=float) for cell in adaptive_cells if cell.mass_est > 0.0]
+        u2_fail_adaptive = [np.array([cell.center_u2], dtype=float) for cell in adaptive_cells if cell.mass_est > 0.0]
 
         weight_parts: list[np.ndarray] = []
         point_parts: list[np.ndarray] = []
-
         if w_fail_coarse.size > 0:
             weight_parts.append(w_fail_coarse)
             point_parts.append(np.column_stack([u1_fail_coarse, u2_fail_coarse]))
-
-        if w_fail_refined:
-            weight_parts.append(np.concatenate(w_fail_refined))
-            point_parts.append(np.column_stack([np.concatenate(u1_fail_refined), np.concatenate(u2_fail_refined)]))
+        if w_fail_adaptive:
+            weight_parts.append(np.concatenate(w_fail_adaptive))
+            point_parts.append(np.column_stack([np.concatenate(u1_fail_adaptive), np.concatenate(u2_fail_adaptive)]))
 
         if weight_parts:
             weights = np.concatenate(weight_parts)
@@ -531,6 +784,18 @@ class ReliabilityIntegrator:
             weights = np.array([])
             points = np.empty((0, 2))
 
+        final_pf = float(weights.sum()) if weights.size > 0 else 0.0
+        denom = max(final_pf, cfg.adaptive_pf_floor)
+        estimated_logpf_error = float(np.log1p(remaining_error / denom)) if remaining_error > 0.0 else 0.0
+        max_depth_reached_cells = int(
+            sum(
+                1
+                for cell in adaptive_cells
+                if cell.depth >= cfg.adaptive_max_depth and cell.error_est > 0.0
+            )
+        )
+        refined_fail_cells = int(sum(1 for cell in adaptive_cells if cell.mass_est > 0.0))
+
         return FailureSamples(
             weights=weights,
             points=points,
@@ -538,7 +803,17 @@ class ReliabilityIntegrator:
             refined_fail_cells=refined_fail_cells,
             mixed_cells=int(grid.mixed_indices.shape[0]),
             hazard_levels=None,
+            adaptive_converged=converged,
+            adaptive_iterations=iterations,
+            adaptive_estimated_logpf_error=estimated_logpf_error,
+            adaptive_remaining_pf_error=float(remaining_error),
+            adaptive_max_depth_reached_cells=max_depth_reached_cells,
         )
+
+    # Distribution-based implementation
+    def _integrate_distributions(self) -> FailureSamples:
+        """Integrate probability mass using adaptive mixed-cell refinement."""
+        return self._integrate_distributions_adaptive()
 
     def _initialize_distributions(self) -> None:
         """Resolve the actual R/S distributions, honoring curve inputs when provided."""
@@ -601,4 +876,9 @@ class ReliabilityIntegrator:
             failure_samples=samples,
             hazard_level=hazard_level,
             beta_pf=beta_pf,
+            adaptive_converged=samples.adaptive_converged,
+            adaptive_iterations=samples.adaptive_iterations,
+            adaptive_estimated_logpf_error=samples.adaptive_estimated_logpf_error,
+            adaptive_remaining_pf_error=samples.adaptive_remaining_pf_error,
+            adaptive_max_depth_reached_cells=samples.adaptive_max_depth_reached_cells,
         )

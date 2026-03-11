@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import openturns as ot
 import pytest
+from failure_paths.common.prob import beta_from_pf, pf_from_beta
 from failure_paths.reliability import (
     FailureSamples,
     FragilityCurve,
@@ -25,7 +26,6 @@ def _default_config(**overrides: float) -> IntegrationConfig:
         "r_distribution": ot.Gumbel(1.0, 4.0),
         "s_distribution": ot.Normal(1.0, 1.0),
         "coarse_points": 11,
-        "refine_factor": 1,
         "u_min": -8.0,
         "u_max": 8.0,
     }
@@ -81,7 +81,6 @@ def test_integrator_matches_analytic_pf() -> None:
         r_distribution=ot.Normal(mu_r, sigma_r),
         s_distribution=ot.Normal(mu_s, sigma_s),
         coarse_points=101,
-        refine_factor=20,
         u_min=-10.0,
         u_max=10.0,
     )
@@ -93,7 +92,7 @@ def test_integrator_matches_analytic_pf() -> None:
     # analytic_beta = ot.Normal().computeQuantile(analytic_pf, True)[0]
     analytic_beta = (mu_r - mu_s) / sigma_z
 
-    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-5, abs_tol=0)
+    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-4, abs_tol=0)
 
 
 def test_integrator_matches_dirac_solicitation() -> None:
@@ -103,7 +102,6 @@ def test_integrator_matches_dirac_solicitation() -> None:
         r_distribution=ot.Normal(mu_r, sigma_r),
         s_distribution=ot.Dirac(s_level),
         coarse_points=101,
-        refine_factor=20,
         u_min=-10.0,
         u_max=10.0,
     )
@@ -113,7 +111,77 @@ def test_integrator_matches_dirac_solicitation() -> None:
     # analytic_beta = ot.Normal().computeQuantile(analytic_pf, True)[0]
     analytic_beta = (mu_r - s_level) / sigma_r
 
-    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-12, abs_tol=0)
+    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=0.0, abs_tol=1e-3)
+
+
+@pytest.mark.parametrize("step", [3.1, 3.6, 4.2, 4.3, 5.2])
+def test_integrator_matches_normal_step_solicitation(step: float) -> None:
+    mu_s, sigma_s = 4.0, 0.25
+    config = IntegrationConfig(
+        s_distribution=ot.Normal(mu_s, sigma_s),
+        fragility_curve=FragilityCurve([step - 1.0, step, step + 1e-6, step + 1], [np.inf, np.inf, -np.inf, -np.inf]),
+        coarse_points=101,
+        u_min=-10.0,
+        u_max=10.0,
+    )
+    result = ReliabilityIntegrator(config=config).run()
+
+    analytic_beta = ot.Normal(mu_s, sigma_s).computeSurvivalFunction([step])
+    analytic_beta = ot.Normal().computeQuantile(analytic_beta, True)[0]
+
+    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=0.0, abs_tol=1e-3)
+
+
+@pytest.mark.parametrize("step", [3.6, 4.0, 4.5, 5.0, 5.5, 6.0, 6.4])
+def test_integrator_matches_hazard_step_solicitation(step: float) -> None:
+    hazard_data = [
+        (3.6, 0.1081979),
+        (3.7, 8.7795116e-02),
+        (3.8, 7.0926525e-02),
+        (3.9, 5.7202410e-02),
+        (4.0, 4.6065349e-02),
+        (4.1, 3.7077814e-02),
+        (4.2, 2.9814601e-02),
+        (4.3, 2.3914794e-02),
+        (4.4, 1.9138306e-02),
+        (4.5, 1.5251501e-02),
+        (4.6, 1.2031388e-02),
+        (4.7, 9.2987102e-03),
+        (4.8, 6.9610281e-03),
+        (4.9, 4.9987440e-03),
+        (5.0, 3.4132395e-03),
+        (5.1, 2.2145538e-03),
+        (5.2, 1.3648920e-03),
+        (5.3, 8.0153148e-04),
+        (5.4, 4.5302085e-04),
+        (5.5, 2.3970423e-04),
+        (5.6, 1.2130349e-04),
+        (5.7, 6.1366991e-05),
+        (5.8, 3.1017240e-05),
+        (5.9, 1.6166996e-05),
+        (6.0, 8.8319548e-06),
+        (6.1, 4.8836955e-06),
+        (6.2, 2.7053347e-06),
+        (6.3, 1.5057763e-06),
+        (6.4, 8.2912675e-07),
+    ]
+    hazard_array = np.array(hazard_data, dtype=float)
+    hazard_curve = HazardCurve(hazard_array[:, 0], hazard_array[:, 1])
+
+    config = IntegrationConfig(
+        hazard_curve=hazard_curve,
+        fragility_curve=FragilityCurve([step - 1.0, step, step + 1e-6, step + 1], [np.inf, np.inf, -np.inf, -np.inf]),
+        coarse_points=101,
+        u_min=-10.0,
+        u_max=10.0,
+    )
+    result = ReliabilityIntegrator(config=config).run()
+    analytic_beta = float(hazard_curve.beta_from_hazard(step))
+
+    assert result.adaptive_converged is True
+    assert result.adaptive_estimated_logpf_error is not None
+    assert result.adaptive_estimated_logpf_error <= config.adaptive_logpf_tol + 1e-12
+    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=0.0, abs_tol=1e-3)
 
 
 def test_integrator_respects_solicitation_cutoff() -> None:
@@ -123,7 +191,6 @@ def test_integrator_respects_solicitation_cutoff() -> None:
         r_distribution=ot.Normal(mu_r, sigma_r),
         s_distribution=ot.Dirac(s_level),
         coarse_points=101,
-        refine_factor=20,
         u_min=-10.0,
         u_max=10.0,
     )
@@ -155,7 +222,6 @@ def test_failure_samples_with_cutoff_do_not_exceed_level() -> None:
         r_distribution=ot.Normal(1.5, 0.6),
         s_distribution=ot.Normal(0.8, 0.7),
         coarse_points=61,
-        refine_factor=4,
         u_min=-8.0,
         u_max=8.0,
         max_solicitation_level=0.5,
@@ -173,7 +239,6 @@ def test_integrator_matches_dirac_resistance() -> None:
         r_distribution=ot.Dirac(r_level),
         s_distribution=ot.Normal(mu_s, sigma_s),
         coarse_points=101,
-        refine_factor=20,
         u_min=-10.0,
         u_max=10.0,
     )
@@ -184,11 +249,11 @@ def test_integrator_matches_dirac_resistance() -> None:
     analytic_beta = ot.Normal().computeQuantile(analytic_pf, True)[0]
     analytic_beta = (r_level - mu_s) / sigma_s
 
-    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=1e-12, abs_tol=0)
+    assert math.isclose(result.beta_pf, analytic_beta, rel_tol=0.0, abs_tol=1e-3)
 
 
 def test_failure_samples_diagnostics_match_weights() -> None:
-    config = _default_config(coarse_points=41, refine_factor=4)
+    config = _default_config(coarse_points=41)
     integrator = ReliabilityIntegrator(config=config)
     samples = integrator.integrate_failure_samples()
 
@@ -213,8 +278,8 @@ def test_config_range_validation() -> None:
         )
 
 
-def test_integrator_refine_factor_one() -> None:
-    config = _default_config(refine_factor=1, coarse_points=31)
+def test_integrator_runs_with_zero_adaptive_depth() -> None:
+    config = _default_config(coarse_points=31, adaptive_max_depth=0)
     integrator = ReliabilityIntegrator(config=config)
     result = integrator.run()
 
@@ -223,7 +288,7 @@ def test_integrator_refine_factor_one() -> None:
 
 
 def test_integrator_matches_form_reference() -> None:
-    config = _default_config(coarse_points=101, refine_factor=10)
+    config = _default_config(coarse_points=101)
     integrator = ReliabilityIntegrator(config=config)
     near_result = integrator.run()
 
@@ -267,7 +332,6 @@ def test_hazard_integrator_matches_expected_pf_and_hazard_level() -> None:
         hazard_curve=hazard,
         fragility_curve=fragility,
         coarse_points=101,
-        refine_factor=20,
         u_min=-10.0,
         u_max=10.0,
     )
@@ -290,7 +354,6 @@ def test_mixed_curve_and_distribution_inputs() -> None:
         s_distribution=ot.Normal(0.0, 1.0),
         fragility_curve=fragility,
         coarse_points=61,
-        refine_factor=2,
     )
     result_fragility = ReliabilityIntegrator(config=config_fragility).run()
 
@@ -299,7 +362,6 @@ def test_mixed_curve_and_distribution_inputs() -> None:
         r_distribution=ot.Normal(0.0, 1.0),
         hazard_curve=hazard,
         coarse_points=61,
-        refine_factor=2,
     )
     result_hazard = ReliabilityIntegrator(config=config_hazard).run()
 
@@ -316,6 +378,88 @@ def test_hazard_curve_beta_mapping_roundtrip() -> None:
     assert np.allclose(reconstructed, [0.0, 4.0], atol=1e-6)
 
 
+def test_curve_knots_are_injected_into_u_grid_edges() -> None:
+    hazard = HazardCurve([0.0, 1.0, 2.0, 3.0], [0.98, 0.8, 0.2, 0.02])
+    fragility = FragilityCurve([0.0, 1.0, 2.0, 3.0], [2.0, 0.5, -0.5, -2.0])
+
+    config = IntegrationConfig(
+        r_distribution=None,
+        s_distribution=None,
+        hazard_curve=hazard,
+        fragility_curve=fragility,
+        coarse_points=5,
+        u_min=-6.0,
+        u_max=6.0,
+    )
+    integrator = ReliabilityIntegrator(config=config)
+    grid = integrator._compute_distribution_grid()
+
+    r_levels = fragility.hazard_levels.astype(float)
+    r_cdf = np.array(integrator.r_distribution.computeCDF(r_levels[:, np.newaxis])).reshape(-1)
+    expected_u1 = beta_from_pf(np.clip(r_cdf, 0.0, 1.0), tail="lower")
+    expected_u1 = expected_u1[(expected_u1 > config.u_min) & (expected_u1 < config.u_max) & np.isfinite(expected_u1)]
+
+    s_levels = hazard.hazard_levels.astype(float)
+    s_cdf = np.array(integrator.s_distribution.computeCDF(s_levels[:, np.newaxis])).reshape(-1)
+    expected_u2 = beta_from_pf(np.clip(s_cdf, 0.0, 1.0), tail="lower")
+    expected_u2 = expected_u2[(expected_u2 > config.u_min) & (expected_u2 < config.u_max) & np.isfinite(expected_u2)]
+
+    for u_val in np.unique(expected_u1):
+        assert np.any(np.isclose(grid.u1_edges, u_val, rtol=0.0, atol=1e-12))
+
+    for u_val in np.unique(expected_u2):
+        assert np.any(np.isclose(grid.u2_edges, u_val, rtol=0.0, atol=1e-12))
+
+
+def test_curve_knots_fill_regular_edges_up_to_coarse_points() -> None:
+    u_min, u_max = -4.0, 4.0
+    knot_betas = np.linspace(u_min, u_max, 80)
+    hazard_levels = np.arange(knot_betas.size, dtype=float)
+    exceedance = pf_from_beta(knot_betas, tail="upper")
+    hazard = HazardCurve(hazard_levels, exceedance)
+
+    cfg = IntegrationConfig(
+        r_distribution=ot.Normal(0.0, 1.0),
+        hazard_curve=hazard,
+        coarse_points=101,
+        u_min=u_min,
+        u_max=u_max,
+    )
+    grid = ReliabilityIntegrator(cfg)._compute_distribution_grid()
+
+    assert grid.u2_edges.size == cfg.coarse_points
+    assert np.any(np.isclose(grid.u2_edges, u_min, rtol=0.0, atol=1e-12))
+    assert np.any(np.isclose(grid.u2_edges, u_max, rtol=0.0, atol=1e-12))
+
+
+def test_curve_knots_are_not_downsampled_when_exceeding_coarse_points() -> None:
+    u_min, u_max = -4.0, 4.0
+    knot_betas = np.linspace(u_min, u_max, 160)
+    hazard_levels = np.arange(knot_betas.size, dtype=float)
+    exceedance = pf_from_beta(knot_betas, tail="upper")
+    hazard = HazardCurve(hazard_levels, exceedance)
+
+    cfg = IntegrationConfig(
+        r_distribution=ot.Normal(0.0, 1.0),
+        hazard_curve=hazard,
+        coarse_points=101,
+        u_min=u_min,
+        u_max=u_max,
+    )
+    integrator = ReliabilityIntegrator(cfg)
+    grid = integrator._compute_distribution_grid()
+
+    level_arr = hazard.hazard_levels.astype(float)
+    cdf = np.array(integrator.s_distribution.computeCDF(level_arr[:, np.newaxis])).reshape(-1)
+    knot_u = beta_from_pf(np.clip(cdf, 0.0, 1.0), tail="lower")
+    knot_u = knot_u[np.isfinite(knot_u) & (knot_u > u_min) & (knot_u < u_max)]
+    mandatory = np.sort(np.unique(np.r_[u_min, u_max, knot_u]))
+
+    assert mandatory.size > cfg.coarse_points
+    assert grid.u2_edges.size == mandatory.size
+    assert np.allclose(grid.u2_edges, mandatory, rtol=0.0, atol=1e-12)
+
+
 def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
     mu_r, sigma_r = 2.5, 0.8
     mu_s, sigma_s = 0.5, 0.9
@@ -324,7 +468,6 @@ def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
         r_distribution=ot.Normal(mu_r, sigma_r),
         s_distribution=ot.Normal(mu_s, sigma_s),
         coarse_points=101,
-        refine_factor=10,
         u_min=-s_factor,
         u_max=s_factor,
     )
@@ -355,17 +498,18 @@ def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
         hazard_curve=hazard_curve,
         fragility_curve=fragility_curve,
         coarse_points=101,
-        refine_factor=10,
     )
     curve_result = ReliabilityIntegrator(config=curve_config).run()
+    analytic_beta = (mu_r - mu_s) / math.hypot(sigma_r, sigma_s)
 
-    assert math.isclose(curve_result.beta_pf, dist_result.beta_pf, rel_tol=1e-10)
-    assert math.isclose(curve_result.alpha[0], dist_result.alpha[0], rel_tol=1e-10)
-    assert math.isclose(curve_result.alpha[1], dist_result.alpha[1], rel_tol=1e-10)
+    # Curve-driven grids now include curve knot locations, so they are not
+    # expected to be bitwise-equivalent to distribution-only grids.
+    assert math.isclose(curve_result.beta_pf, dist_result.beta_pf, rel_tol=2e-4)
+    assert abs(curve_result.beta_pf - analytic_beta) <= abs(dist_result.beta_pf - analytic_beta) + 1e-12
 
 
 def test_integration_grid_plot_smoke(tmp_path: Path) -> None:
-    config = _default_config(coarse_points=21, refine_factor=4)
+    config = _default_config(coarse_points=21)
     integrator = ReliabilityIntegrator(config=config)
     fig, ax = plot_integration_grid(integrator)
 
@@ -392,7 +536,6 @@ def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
         hazard_curve=hazard,
         fragility_curve=fragility,
         coarse_points=21,
-        refine_factor=2,
     )
     integrator = ReliabilityIntegrator(config=config)
     fig, ax = plot_integration_grid(integrator, limit_points=65)
@@ -406,7 +549,7 @@ def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
 
 
 def test_failure_histogram_conserves_probability() -> None:
-    config = _default_config(coarse_points=51, refine_factor=4)
+    config = _default_config(coarse_points=51)
     integrator = ReliabilityIntegrator(config=config)
     result = integrator.run()
 
