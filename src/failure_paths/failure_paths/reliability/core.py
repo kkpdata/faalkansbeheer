@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import heapq
+from dataclasses import dataclass
 
 import numpy as np
 import openturns as ot
@@ -788,11 +788,7 @@ class ReliabilityIntegrator:
         denom = max(final_pf, cfg.adaptive_pf_floor)
         estimated_logpf_error = float(np.log1p(remaining_error / denom)) if remaining_error > 0.0 else 0.0
         max_depth_reached_cells = int(
-            sum(
-                1
-                for cell in adaptive_cells
-                if cell.depth >= cfg.adaptive_max_depth and cell.error_est > 0.0
-            )
+            sum(1 for cell in adaptive_cells if cell.depth >= cfg.adaptive_max_depth and cell.error_est > 0.0)
         )
         refined_fail_cells = int(sum(1 for cell in adaptive_cells if cell.mass_est > 0.0))
 

@@ -66,9 +66,7 @@ class IntegrationResult:
             "alpha": self.alpha.tolist(),
             "adaptive_converged": self.adaptive_converged,
             "adaptive_estimated_logpf_error": (
-                float(self.adaptive_estimated_logpf_error)
-                if self.adaptive_estimated_logpf_error is not None
-                else None
+                float(self.adaptive_estimated_logpf_error) if self.adaptive_estimated_logpf_error is not None else None
             ),
         }
 

@@ -29,4 +29,3 @@ water_levels = np.linspace(0, 10, 101)
 plot_failure_histogram(result, water_levels, ax=axs[1])
 
 plt.show()
-

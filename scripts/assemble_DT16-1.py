@@ -17,9 +17,17 @@ from failure_paths import ExcelEventGraph
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Assemble and integrate scenario fragility curves.")
-    parser.add_argument("--hr-path", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-1_hr/WBI2017_Benedenrijn_16-1_v04"))
+    parser.add_argument(
+        "--hr-path", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-1_hr/WBI2017_Benedenrijn_16-1_v04")
+    )
     parser.add_argument("--hr-calname", default="ws")
-    parser.add_argument("--dir-traject", type=Path, default=Path("C:/Users/SAKA/Waterschap Rivierenland/Beoordeling Primaire Keringen - LBO2 - 3_Project/Gedeelde informatie/Opleverdossier/99 Assemblage 16-1"))
+    parser.add_argument(
+        "--dir-traject",
+        type=Path,
+        default=Path(
+            "C:/Users/SAKA/Waterschap Rivierenland/Beoordeling Primaire Keringen - LBO2 - 3_Project/Gedeelde informatie/Opleverdossier/99 Assemblage 16-1"
+        ),
+    )
     parser.add_argument("--output-folder", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-1_output"))
     parser.add_argument("--scenario-name", default="scenario1")
     parser.add_argument("--wl-min", type=float, default=0.0)
@@ -285,4 +293,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
