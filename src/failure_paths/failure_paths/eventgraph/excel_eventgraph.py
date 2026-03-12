@@ -17,6 +17,7 @@ from .models import (
     MetadataTable,
     PathTable,
 )
+from .special_ids import ReservedPathId
 
 # Excel keyword constants
 KEYWORD_METADATA = "metadata"
@@ -236,7 +237,7 @@ class ExcelEventGraph(EventGraph):
         ValueError
             If a required frequency table is missing.
         """
-        root_id = (-3, 0)
+        root_id = (ReservedPathId.START_NODE.value, 0)
         nodes: dict[tuple[int, int], GraphNode] = {
             root_id: GraphNode(node_id=root_id, description=start_node, node_type="start_node", type_name=None)
         }
@@ -248,8 +249,8 @@ class ExcelEventGraph(EventGraph):
         for (overslag, indirect, overslag_idx, indirect_idx), group in normalized.df.groupby(group_keys):
             overslag_idx = int(overslag_idx)
             indirect_idx = int(indirect_idx)
-            cnode1 = (-2, overslag_idx)
-            cnode2 = (-1, indirect_idx)
+            cnode1 = (ReservedPathId.OVERTOPPING.value, overslag_idx)
+            cnode2 = (ReservedPathId.INDIRECT_MECHANISM.value, indirect_idx)
             nodes[cnode1] = GraphNode(
                 node_id=cnode1,
                 description=f"overslag: {overslag}",
@@ -269,7 +270,10 @@ class ExcelEventGraph(EventGraph):
                 [normalized.overslag_values, normalized.indirect_values],
                 [overslag, indirect],
                 ["overslag", normalized.indirect_column],
-                [-2, -1],
+                [
+                    ReservedPathId.OVERTOPPING.value,
+                    ReservedPathId.INDIRECT_MECHANISM.value,
+                ],
                 [overslag_idx, indirect_idx],
             ):
                 if len(uniq_vals) == 1:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from failure_paths.eventgraph import ReservedPathId
 from failure_paths.eventgraph.models import EventTable, MetadataTable, PathTable
 
 
@@ -51,9 +52,11 @@ def test_event_table_non_monotone_fragility_raises() -> None:
 
 
 def test_event_table_monotone_decreasing_fragility_allowed_for_special_faalpaden() -> None:
+    indirect_id = ReservedPathId.INDIRECT_MECHANISM.value
+    overslag_id = ReservedPathId.OVERTOPPING.value
     df_event = pd.DataFrame(
         {
-            "Faalpad_ID": [-1, -1, -2, -2],
+            "Faalpad_ID": [indirect_id, indirect_id, overslag_id, overslag_id],
             "Knoop_ID": [1, 1, 1, 1],
             "h": [0.0, 1.0, 0.0, 1.0],
             "Pf_h": [0.2, 0.1, 0.3, 0.2],
@@ -67,9 +70,11 @@ def test_event_table_monotone_decreasing_fragility_allowed_for_special_faalpaden
 
 
 def test_event_table_monotone_increasing_fragility_allowed_for_special_faalpaden() -> None:
+    indirect_id = ReservedPathId.INDIRECT_MECHANISM.value
+    overslag_id = ReservedPathId.OVERTOPPING.value
     df_event = pd.DataFrame(
         {
-            "Faalpad_ID": [-1, -1, -2, -2],
+            "Faalpad_ID": [indirect_id, indirect_id, overslag_id, overslag_id],
             "Knoop_ID": [1, 1, 1, 1],
             "h": [0.0, 1.0, 0.0, 1.0],
             "Pf_h": [0.1, 0.2, 0.2, 0.3],
@@ -83,9 +88,10 @@ def test_event_table_monotone_increasing_fragility_allowed_for_special_faalpaden
 
 
 def test_event_table_mixed_direction_fragility_raises_for_special_faalpaden() -> None:
+    indirect_id = ReservedPathId.INDIRECT_MECHANISM.value
     df_event = pd.DataFrame(
         {
-            "Faalpad_ID": [-1, -1, -1],
+            "Faalpad_ID": [indirect_id, indirect_id, indirect_id],
             "Knoop_ID": [1, 1, 1],
             "h": [0.0, 1.0, 2.0],
             "Pf_h": [0.2, 0.1, 0.15],
@@ -93,7 +99,8 @@ def test_event_table_mixed_direction_fragility_raises_for_special_faalpaden() ->
         }
     )
 
-    with pytest.raises(ValueError, match="special Faalpad_ID -1/-2 must be monotone"):
+    special_ids_label = f"{ReservedPathId.INDIRECT_MECHANISM.value}/{ReservedPathId.OVERTOPPING.value}"
+    with pytest.raises(ValueError, match=rf"special Faalpad_ID {special_ids_label} must be monotone"):
         EventTable.from_dataframe(df_event)
 
 

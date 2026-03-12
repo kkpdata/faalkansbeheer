@@ -15,6 +15,7 @@ from ...common.prob import (
     beta_from_pf,
     pf_from_beta,
 )
+from ..special_ids import ReservedPathId
 from .table_model import TableModel
 
 
@@ -227,7 +228,7 @@ class EventTable(TableModel):
 
         # Validate monotone fragility curves per event id.
         # Regular faalpaden must be non-decreasing with h.
-        # Faalpaden -1 and -2 are synthetic/special and must be monotone:
+        # Reserved scenario faalpaden are synthetic/special and must be monotone:
         # entirely non-decreasing or entirely non-increasing.
         events_df = table.df.reset_index().sort_values(["Faalpad_ID", "Knoop_ID", "h"])
         violations: list[dict[str, float | int]] = []
@@ -237,7 +238,7 @@ class EventTable(TableModel):
             diff_pf = np.diff(pf_values)
             decreasing = diff_pf < 0.0
             increasing = diff_pf > 0.0
-            is_special = int(faalpad_id) in {-1, -2}
+            is_special = ReservedPathId.is_scenario(int(faalpad_id))
 
             if is_special:
                 # Mixed direction is invalid for special ids.
@@ -263,9 +264,10 @@ class EventTable(TableModel):
 
         if violations:
             sample = violations[:5]
+            special_ids_label = f"{ReservedPathId.INDIRECT_MECHANISM.value}/{ReservedPathId.OVERTOPPING.value}"
             raise ValueError(
                 "Invalid fragility curve: Pf_h must be non-decreasing with increasing h; "
-                "special Faalpad_ID -1/-2 must be monotone. "
+                f"special Faalpad_ID {special_ids_label} must be monotone. "
                 f"Violations (showing up to 5): {sample}"
             )
 
