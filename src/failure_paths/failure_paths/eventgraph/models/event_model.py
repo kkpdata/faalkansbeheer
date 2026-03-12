@@ -97,7 +97,8 @@ class EventTable(TableModel):
         numpy.ndarray
             Interpolated probabilities or reliability indices for each water level.
         """
-        subset = self.df.loc[node_id, ["h", "Beta_h"]].sort_values(["h", "Beta_h"], ascending=[True, False])
+        # Use [node_id] to force a dataframe, even if only a single row is returned
+        subset = self.df.loc[[node_id], ["h", "Beta_h"]].sort_values(["h", "Beta_h"], ascending=[True, False])
 
         # keep only the last +inf row, drop the rest
         inf_mask = np.isposinf(subset["Beta_h"])
