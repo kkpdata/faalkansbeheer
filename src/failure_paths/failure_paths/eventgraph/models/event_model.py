@@ -225,9 +225,12 @@ class EventTable(TableModel):
             raise ValueError(f"Duplicate events detected for combinations of {dupe_subset}: {dup_str}")
 
         # Validate monotone fragility curves per event id: Pf_h must not decrease with h.
+        # Faalpaden -1 and -2 are synthetic/special and excluded from this check.
         events_df = table.df.reset_index().sort_values(["Faalpad_ID", "Knoop_ID", "h"])
         violations: list[dict[str, float | int]] = []
         for (faalpad_id, knoop_id), group in events_df.groupby(["Faalpad_ID", "Knoop_ID"], sort=False):
+            if int(faalpad_id) in {-1, -2}:
+                continue
             h_values = group["h"].to_numpy(dtype=float)
             pf_values = group["Pf_h"].to_numpy(dtype=float)
             decreasing = np.diff(pf_values) < 0.0
