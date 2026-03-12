@@ -50,7 +50,7 @@ def test_event_table_non_monotone_fragility_raises() -> None:
         EventTable.from_dataframe(df_event)
 
 
-def test_event_table_non_monotone_fragility_allowed_for_special_faalpaden() -> None:
+def test_event_table_monotone_decreasing_fragility_allowed_for_special_faalpaden() -> None:
     df_event = pd.DataFrame(
         {
             "Faalpad_ID": [-1, -1, -2, -2],
@@ -64,6 +64,37 @@ def test_event_table_non_monotone_fragility_allowed_for_special_faalpaden() -> N
     table = EventTable.from_dataframe(df_event)
 
     assert len(table.df) == 4
+
+
+def test_event_table_monotone_increasing_fragility_allowed_for_special_faalpaden() -> None:
+    df_event = pd.DataFrame(
+        {
+            "Faalpad_ID": [-1, -1, -2, -2],
+            "Knoop_ID": [1, 1, 1, 1],
+            "h": [0.0, 1.0, 0.0, 1.0],
+            "Pf_h": [0.1, 0.2, 0.2, 0.3],
+            "Beta_h": [np.nan, np.nan, np.nan, np.nan],
+        }
+    )
+
+    table = EventTable.from_dataframe(df_event)
+
+    assert len(table.df) == 4
+
+
+def test_event_table_mixed_direction_fragility_raises_for_special_faalpaden() -> None:
+    df_event = pd.DataFrame(
+        {
+            "Faalpad_ID": [-1, -1, -1],
+            "Knoop_ID": [1, 1, 1],
+            "h": [0.0, 1.0, 2.0],
+            "Pf_h": [0.2, 0.1, 0.15],
+            "Beta_h": [np.nan, np.nan, np.nan],
+        }
+    )
+
+    with pytest.raises(ValueError, match="special Faalpad_ID -1/-2 must be monotone"):
+        EventTable.from_dataframe(df_event)
 
 
 def test_path_table_normalizes_inputs() -> None:

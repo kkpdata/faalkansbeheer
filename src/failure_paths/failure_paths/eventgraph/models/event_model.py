@@ -224,19 +224,31 @@ class EventTable(TableModel):
             dup_str = duplicates.to_dict(orient="records").__repr__()
             raise ValueError(f"Duplicate events detected for combinations of {dupe_subset}: {dup_str}")
 
-        # Validate monotone fragility curves per event id: Pf_h must not decrease with h.
-        # Faalpaden -1 and -2 are synthetic/special and excluded from this check.
+        # Validate monotone fragility curves per event id.
+        # Regular faalpaden must be non-decreasing with h.
+        # Faalpaden -1 and -2 are synthetic/special and must be monotone:
+        # entirely non-decreasing or entirely non-increasing.
         events_df = table.df.reset_index().sort_values(["Faalpad_ID", "Knoop_ID", "h"])
         violations: list[dict[str, float | int]] = []
         for (faalpad_id, knoop_id), group in events_df.groupby(["Faalpad_ID", "Knoop_ID"], sort=False):
-            if int(faalpad_id) in {-1, -2}:
-                continue
             h_values = group["h"].to_numpy(dtype=float)
             pf_values = group["Pf_h"].to_numpy(dtype=float)
-            decreasing = np.diff(pf_values) < 0.0
-            if not np.any(decreasing):
-                continue
-            for idx in np.where(decreasing)[0]:
+            diff_pf = np.diff(pf_values)
+            decreasing = diff_pf < 0.0
+            increasing = diff_pf > 0.0
+            is_special = int(faalpad_id) in {-1, -2}
+
+            if is_special:
+                # Mixed direction is invalid for special ids.
+                if not (np.any(decreasing) and np.any(increasing)):
+                    continue
+                offenders = np.where(decreasing | increasing)[0]
+            else:
+                if not np.any(decreasing):
+                    continue
+                offenders = np.where(decreasing)[0]
+
+            for idx in offenders:
                 violations.append(
                     {
                         "Faalpad_ID": int(faalpad_id),
@@ -251,7 +263,8 @@ class EventTable(TableModel):
         if violations:
             sample = violations[:5]
             raise ValueError(
-                "Invalid fragility curve: Pf_h must be non-decreasing with increasing h. "
+                "Invalid fragility curve: Pf_h must be non-decreasing with increasing h; "
+                "special Faalpad_ID -1/-2 must be monotone. "
                 f"Violations (showing up to 5): {sample}"
             )
 
