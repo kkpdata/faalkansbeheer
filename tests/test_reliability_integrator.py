@@ -34,7 +34,8 @@ def _default_config(**overrides: float) -> IntegrationConfig:
 
 
 def _form_reference_result(
-    r_distribution: ot.Distribution, s_distribution: ot.Distribution, threshold: float = 0.0
+    r_distribution: ot.Distribution,
+    s_distribution: ot.Distribution,
 ) -> tuple[float, np.ndarray]:
     marginals = {"R": r_distribution, "S": s_distribution}
     distribution = ot.ComposedDistribution(
@@ -46,7 +47,7 @@ def _form_reference_result(
     g_function = ot.SymbolicFunction(["R", "S"], ["R - S"])
     random_vector = ot.RandomVector(distribution)
     composite = ot.CompositeRandomVector(g_function, random_vector)
-    event = ot.ThresholdEvent(composite, ot.Less(), threshold)
+    event = ot.ThresholdEvent(composite, ot.Less(), 0.0)
     event.setName("failure")
 
     optim_algo = ot.AbdoRackwitz()
@@ -295,7 +296,6 @@ def test_integrator_matches_form_reference() -> None:
     beta_form, alpha_form = _form_reference_result(
         config.r_distribution,
         config.s_distribution,
-        config.threshold,
     )
 
     assert math.isclose(near_result.beta_pf, beta_form, rel_tol=1e-3)
