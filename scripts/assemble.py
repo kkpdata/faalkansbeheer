@@ -53,8 +53,6 @@ def integrate_and_plot(
         fragility_curve=FragilityCurve(fc_comb_beta.index.to_numpy(), fc_comb_beta.to_numpy()),
         hazard_curve=HazardCurve(hfreq.index.to_numpy(), hfreq.to_numpy()),
         coarse_points=101,
-        u_min=-10.0,
-        u_max=10.0,
     )
     integrator = ReliabilityIntegrator(config=config)
     result = integrator.run()

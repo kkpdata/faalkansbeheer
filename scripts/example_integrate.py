@@ -10,8 +10,6 @@ config = IntegrationConfig(
     r_distribution=ot.Gumbel(1.0, 4.0),
     s_distribution=ot.Normal(1.0, 1.0),
     coarse_points=501,
-    u_min=-8.0,
-    u_max=8.0,
     max_solicitation_level=4,
 )
 integrator = ReliabilityIntegrator(config=config)

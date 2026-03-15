@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import openturns as ot
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .curves import FragilityCurve, HazardCurve
 
@@ -20,8 +21,19 @@ class IntegrationConfig(BaseModel):
         description="Optional upper bound on solicitation (water level) used to ignore higher failure mass.",
     )
 
-    u_min: float = Field(-10.0, description="Lower bound of the U-space integration range.")
-    u_max: float = Field(10.0, description="Upper bound of the U-space integration range.")
+    u_tail_probability: float = Field(
+        1e-12,
+        gt=0.0,
+        lt=1.0,
+        description=(
+            "Two-sided tail probability used to derive automatic U-space bounds. "
+            "Initial bounds are +/- abs(Phi^-1(u_tail_probability / 2))."
+        ),
+    )
+    u_manual_bounds: tuple[float, float] | None = Field(
+        default=None,
+        description="Optional explicit U-space bounds (u_min, u_max) overriding automatic bounds.",
+    )
     coarse_points: int = Field(101, ge=2, description="Number of U-grid edges (>=2).")
     adaptive_logpf_tol: float = Field(
         1e-2,
@@ -90,33 +102,42 @@ class IntegrationConfig(BaseModel):
             return value
         raise TypeError("Expected an OpenTURNS distribution for R and S.")
 
-    @field_validator("u_max")
+    @field_validator("u_tail_probability")
     @classmethod
-    def _validate_range(cls, value: float, info: ValidationInfo) -> float:
-        """Ensure the user supplied a valid integration range.
+    def _validate_u_tail_probability(cls, value: float) -> float:
+        """Ensure the automatic bound tail target is strictly between 0 and 1.
 
         Parameters
         ----------
         value : float
-            Proposed upper bound for the U-grid.
-        info : ValidationInfo
-            Validation context containing the lower bound.
+            Proposed two-sided tail probability.
 
         Returns
         -------
         float
-            Validated ``u_max``.
+            Validated probability.
 
         Raises
         ------
         ValueError
-            If ``value`` is not strictly greater than ``u_min``.
+            If ``value`` is not in ``(0, 1)``.
         """
-        data = info.data or {}
-        u_min = data.get("u_min")
-        if u_min is not None and value <= u_min:
-            raise ValueError("u_max must be greater than u_min.")
+        if not (0.0 < value < 1.0):
+            raise ValueError("u_tail_probability must be strictly between 0 and 1.")
         return value
+
+    @field_validator("u_manual_bounds")
+    @classmethod
+    def _validate_u_manual_bounds(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
+        """Validate optional manual U-space bounds."""
+        if value is None:
+            return value
+        lower, upper = float(value[0]), float(value[1])
+        if not (np.isfinite(lower) and np.isfinite(upper)):
+            raise ValueError("u_manual_bounds values must be finite.")
+        if upper <= lower:
+            raise ValueError("u_manual_bounds must be strictly increasing (u_min < u_max).")
+        return (lower, upper)
 
     @model_validator(mode="after")
     def _ensure_axis_sources(self) -> IntegrationConfig:

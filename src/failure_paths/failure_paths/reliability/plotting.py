@@ -68,9 +68,10 @@ def plot_integration_grid(
         zorder=1,
     )
 
-    u_limits = (integrator.config.u_min, integrator.config.u_max)
-    ax.vlines(grid.u1_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
-    ax.hlines(grid.u2_edges, *u_limits, color="#d0d0d0", linewidth=0.4, zorder=3)
+    u1_limits = (float(grid.u1_edges[0]), float(grid.u1_edges[-1]))
+    u2_limits = (float(grid.u2_edges[0]), float(grid.u2_edges[-1]))
+    ax.vlines(grid.u1_edges, u2_limits[0], u2_limits[1], color="#d0d0d0", linewidth=0.4, zorder=3)
+    ax.hlines(grid.u2_edges, u1_limits[0], u1_limits[1], color="#d0d0d0", linewidth=0.4, zorder=3)
 
     adaptive_cells, _, _, _ = integrator._adaptive_leaf_cells(grid)
     if adaptive_cells:
@@ -96,7 +97,7 @@ def plot_integration_grid(
             )
         ax.add_collection(LineCollection(adaptive_segments, colors="#666666", linewidths=0.35, zorder=4))
 
-    u_line = np.linspace(integrator.config.u_min, integrator.config.u_max, max(3, limit_points))
+    u_line = np.linspace(u1_limits[0], u1_limits[1], max(3, limit_points))
     u2_line = integrator._limit_state_curve(u_line)
     mask = np.isfinite(u2_line)
     if np.any(mask):
@@ -104,8 +105,8 @@ def plot_integration_grid(
 
     ax.set_xlabel("$u_R$")
     ax.set_ylabel("$u_S$")
-    ax.set_xlim(u_limits)
-    ax.set_ylim(u_limits)
+    ax.set_xlim(u1_limits)
+    ax.set_ylim(u2_limits)
     ax.set_aspect("equal", adjustable="box")
 
     handles = [

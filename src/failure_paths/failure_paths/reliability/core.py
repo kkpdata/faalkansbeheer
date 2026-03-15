@@ -16,6 +16,8 @@ from .results import FailureSamples, IntegrationResult
 class _DistributionGridData:
     """Helper container describing the discretized U-grid."""
 
+    u_min: float
+    u_max: float
     u1_edges: np.ndarray
     u2_edges: np.ndarray
     u1_centers: np.ndarray
@@ -27,6 +29,10 @@ class _DistributionGridData:
     u1_center_grid: np.ndarray
     u2_center_grid: np.ndarray
     mixed_indices: np.ndarray
+    captured_u1_mass: float
+    captured_u2_mass: float
+    captured_domain_mass: float
+    target_domain_mass: float
 
 
 @dataclass
@@ -47,6 +53,18 @@ class _AdaptiveCell:
     refinable: bool
 
 
+@dataclass
+class _BoundsPassResult:
+    """Container for one integration pass at fixed U-space bounds."""
+
+    samples: FailureSamples
+    truncation_pf_error_bound: float
+    total_pf_error_bound: float
+    estimated_logpf_error: float
+    converged: bool
+    u_bounds_used: tuple[float, float]
+
+
 class ReliabilityIntegrator:
     """
     Coordinate grid integration in either distribution or hazard/fragility mode.
@@ -63,6 +81,12 @@ class ReliabilityIntegrator:
         self._r_distribution: ot.Distribution
         self._s_distribution: ot.Distribution
         self._initialize_distributions()
+
+    _AUTO_BOUNDS_WIDEN_STEP = 1.0
+    _AUTO_BOUNDS_MAX_ABS = 16.0
+    _MAX_DISTRIBUTION_STEP_LEVELS = 512
+    _CURVE_LEVEL_MIN_SPACING_X = 1.0e-4
+    _MIN_U_EDGE_SPACING = 1.0e-10
 
     @property
     def r_distribution(self) -> ot.Distribution:
@@ -305,8 +329,172 @@ class ReliabilityIntegrator:
             samples.hazard_levels = self.config.hazard_curve.hazard_from_beta(beta_vals)
         return samples
 
-    def _compute_distribution_grid(self) -> _DistributionGridData:
+    def _initial_u_bounds(self) -> tuple[float, float]:
+        """Resolve initial U-space integration bounds from config."""
+        if self.config.u_manual_bounds is not None:
+            lower, upper = self.config.u_manual_bounds
+            return float(lower), float(upper)
+
+        two_sided_tail = float(self.config.u_tail_probability)
+        half_tail = 0.5 * two_sided_tail
+        bound = abs(float(beta_from_pf(half_tail, tail="lower")))
+        if not np.isfinite(bound) or bound <= 0.0:
+            raise RuntimeError("Failed to derive finite automatic U-space bounds from u_tail_probability.")
+        return -bound, bound
+
+    def _widen_bounds(self, bounds: tuple[float, float]) -> tuple[float, float] | None:
+        """Expand U-space bounds by a fixed step, capped at configured hard limits."""
+        lower, upper = float(bounds[0]), float(bounds[1])
+        widened_lower = max(-self._AUTO_BOUNDS_MAX_ABS, lower - self._AUTO_BOUNDS_WIDEN_STEP)
+        widened_upper = min(self._AUTO_BOUNDS_MAX_ABS, upper + self._AUTO_BOUNDS_WIDEN_STEP)
+        if widened_lower == lower and widened_upper == upper:
+            return None
+        return widened_lower, widened_upper
+
+    def _truncation_pf_error_bound(self, grid: _DistributionGridData) -> float:
+        """Compute missing probability mass outside the represented integration domain."""
+        return max(0.0, float(grid.target_domain_mass - grid.captured_domain_mass))
+
+    @staticmethod
+    def _merge_level_candidates(*level_groups: np.ndarray | list[float] | None) -> np.ndarray:
+        """Merge candidate physical levels into a finite sorted unique array."""
+        merged: list[np.ndarray] = []
+        for group in level_groups:
+            if group is None:
+                continue
+            arr = np.asarray(group, dtype=float).reshape(-1)
+            if arr.size == 0:
+                continue
+            arr = arr[np.isfinite(arr)]
+            if arr.size == 0:
+                continue
+            merged.append(arr)
+        if not merged:
+            return np.array([], dtype=float)
+        return np.sort(np.unique(np.concatenate(merged)))
+
+    @staticmethod
+    def _deduplicate_with_min_spacing(values: np.ndarray | list[float], min_spacing: float) -> np.ndarray:
+        """Sort and deduplicate values while enforcing a minimum spacing."""
+        arr = np.asarray(values, dtype=float).reshape(-1)
+        if arr.size == 0:
+            return np.array([], dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return np.array([], dtype=float)
+        arr = np.sort(arr)
+        if min_spacing <= 0.0:
+            return np.unique(arr)
+
+        kept = [float(arr[0])]
+        last = float(arr[0])
+        for value in arr[1:]:
+            value_f = float(value)
+            if value_f - last >= min_spacing:
+                kept.append(value_f)
+                last = value_f
+        return np.asarray(kept, dtype=float)
+
+    def _clip_levels_to_range(
+        self,
+        levels: np.ndarray | list[float] | None,
+        x_min: float,
+        x_max: float,
+    ) -> np.ndarray:
+        """Clip candidate physical levels to finite values inside [x_min, x_max]."""
+        if levels is None:
+            return np.array([], dtype=float)
+        arr = np.asarray(levels, dtype=float).reshape(-1)
+        if arr.size == 0:
+            return np.array([], dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return np.array([], dtype=float)
+        arr = arr[(arr >= x_min) & (arr <= x_max)]
+        if arr.size == 0:
+            return np.array([], dtype=float)
+        return self._deduplicate_with_min_spacing(arr, self._CURVE_LEVEL_MIN_SPACING_X)
+
+    def _distribution_value_bounds(self, dist: ot.Distribution, u_min: float, u_max: float) -> tuple[float, float]:
+        """Map U-space bounds to finite physical-space bounds for a distribution."""
+        u_edges = np.array([u_min, u_max], dtype=float)
+        cdf_edges, surv_edges = self._normal_probabilities(u_edges)
+        x_edges = self._map_u_to_distribution(
+            u_edges,
+            dist,
+            u_values_cdf=cdf_edges,
+            u_values_survival=surv_edges,
+        )
+        x_edges = np.asarray(x_edges, dtype=float).reshape(-1)
+        finite = x_edges[np.isfinite(x_edges)]
+        if finite.size == 0:
+            raise RuntimeError("Failed to derive finite physical bounds from U-space bounds.")
+        return float(np.min(finite)), float(np.max(finite))
+
+    def _distribution_step_levels(self, dist: ot.Distribution, x_min: float, x_max: float) -> np.ndarray:
+        """Collect step/singularity level candidates from a distribution."""
+        levels: list[float] = []
+
+        # Singularities are available for some mixed distributions.
+        try:
+            singularities = dist.getSingularities()
+            levels.extend(float(singularities[i]) for i in range(singularities.getSize()))
+        except Exception:
+            pass
+
+        is_discrete = False
+        try:
+            is_discrete = bool(dist.isDiscrete())
+        except Exception:
+            is_discrete = False
+
+        if is_discrete:
+            support_values: np.ndarray | None = None
+            try:
+                interval = ot.Interval([float(x_min)], [float(x_max)])
+                support = dist.getSupport(interval)
+                support_values = np.asarray(support, dtype=float).reshape(-1)
+            except Exception:
+                try:
+                    support = dist.getSupport()
+                    support_values = np.asarray(support, dtype=float).reshape(-1)
+                except Exception:
+                    support_values = None
+            if support_values is not None and support_values.size > 0:
+                levels.extend(float(v) for v in support_values)
+
+        if not levels:
+            return np.array([], dtype=float)
+
+        arr = np.asarray(levels, dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return np.array([], dtype=float)
+        arr = arr[(arr >= x_min) & (arr <= x_max)]
+        if arr.size == 0:
+            return np.array([], dtype=float)
+        arr = np.sort(np.unique(arr))
+
+        if arr.size > self._MAX_DISTRIBUTION_STEP_LEVELS:
+            idx = np.linspace(0, arr.size - 1, self._MAX_DISTRIBUTION_STEP_LEVELS)
+            arr = arr[np.unique(np.round(idx).astype(int))]
+        return arr
+
+    def _compute_distribution_grid(
+        self,
+        u_min: float | None = None,
+        u_max: float | None = None,
+    ) -> _DistributionGridData:
         """Assemble the U-grid, masks, and refinement info for distribution mode.
+
+        Parameters
+        ----------
+        u_min : float | None, optional
+            Lower U-space bound for this grid pass. When ``None``, the lower
+            bound is resolved from the configured automatic/manual bound policy.
+        u_max : float | None, optional
+            Upper U-space bound for this grid pass. When ``None``, the upper
+            bound is resolved from the configured automatic/manual bound policy.
 
         Returns
         -------
@@ -315,21 +503,62 @@ class ReliabilityIntegrator:
 
         Raises
         ------
+        ValueError
+            If the resolved bounds are invalid (``u_max <= u_min``).
         RuntimeError
-            If the U-grid configuration produces non-positive probability mass.
+            If the U-grid configuration produces invalid probability mass.
         """
+        if u_min is None or u_max is None:
+            bounds = self._initial_u_bounds()
+            if u_min is None:
+                u_min = bounds[0]
+            if u_max is None:
+                u_max = bounds[1]
+        u_min = float(u_min)
+        u_max = float(u_max)
+        if not (u_max > u_min):
+            raise ValueError("u_max must be greater than u_min.")
+
         cfg = self.config
-        u1_levels = cfg.fragility_curve.hazard_levels if cfg.fragility_curve is not None else None
-        u2_levels = cfg.hazard_curve.hazard_levels if cfg.hazard_curve is not None else None
-        u1_edges = self._build_axis_edges(dist=self.r_distribution, curve_levels=u1_levels)
-        u2_edges = self._build_axis_edges(dist=self.s_distribution, curve_levels=u2_levels)
+        u1_curve_levels = cfg.fragility_curve.hazard_levels if cfg.fragility_curve is not None else None
+        u2_curve_levels = cfg.hazard_curve.hazard_levels if cfg.hazard_curve is not None else None
+
+        r_x_min, r_x_max = self._distribution_value_bounds(self.r_distribution, u_min=u_min, u_max=u_max)
+        s_x_min, s_x_max = self._distribution_value_bounds(self.s_distribution, u_min=u_min, u_max=u_max)
+        shared_curve_levels = self._merge_level_candidates(u1_curve_levels, u2_curve_levels)
+        shared_curve_levels = self._deduplicate_with_min_spacing(
+            shared_curve_levels,
+            self._CURVE_LEVEL_MIN_SPACING_X,
+        )
+        u1_curve_injected = self._clip_levels_to_range(shared_curve_levels, x_min=r_x_min, x_max=r_x_max)
+        u2_curve_injected = self._clip_levels_to_range(shared_curve_levels, x_min=s_x_min, x_max=s_x_max)
+        r_step_levels = self._distribution_step_levels(self.r_distribution, x_min=r_x_min, x_max=r_x_max)
+        s_step_levels = self._distribution_step_levels(self.s_distribution, x_min=s_x_min, x_max=s_x_max)
+        shared_step_levels = self._merge_level_candidates(r_step_levels, s_step_levels)
+        u1_levels = self._merge_level_candidates(u1_curve_injected, shared_step_levels)
+        u2_levels = self._merge_level_candidates(u2_curve_injected, shared_step_levels)
+
+        u1_edges = self._build_axis_edges(
+            dist=self.r_distribution,
+            curve_levels=u1_levels,
+            u_min=u_min,
+            u_max=u_max,
+        )
+        u2_edges = self._build_axis_edges(
+            dist=self.s_distribution,
+            curve_levels=u2_levels,
+            u_min=u_min,
+            u_max=u_max,
+        )
 
         u_s_max = None
+        target_domain_mass = 1.0
         if cfg.max_solicitation_level is not None:
             prob = float(self.s_distribution.computeCDF(cfg.max_solicitation_level))
             prob = float(np.clip(prob, 0.0, 1.0))
+            target_domain_mass = prob
             u_s_max = float(beta_from_pf(prob, tail="lower"))
-            if cfg.u_min < u_s_max < cfg.u_max:
+            if u_min < u_s_max < u_max:
                 u2_edges = np.sort(np.unique(np.r_[u2_edges, u_s_max]))
 
         u1_centers = 0.5 * (u1_edges[1:] + u1_edges[:-1])
@@ -340,16 +569,25 @@ class ReliabilityIntegrator:
         u1_contrib = self._u_interval_probabilities(u1_edges, u1_edges_cdf, u1_edges_survival)
         u2_contrib = self._u_interval_probabilities(u2_edges, u2_edges_cdf, u2_edges_survival)
         total_contrib_u1 = float(u1_contrib.sum())
-        total_contrib_u2 = float(u2_contrib.sum())
-        if total_contrib_u1 <= 0.0 or total_contrib_u2 <= 0.0:
-            raise RuntimeError("Invalid U-grid configuration produced non-positive probability mass.")
-        u1_contrib = u1_contrib / total_contrib_u1
-        u2_contrib = u2_contrib / total_contrib_u2
+        if not np.isfinite(total_contrib_u1) or total_contrib_u1 < 0.0:
+            raise RuntimeError("Invalid U-grid configuration produced invalid probability mass.")
 
         include_mask = None
         if u_s_max is not None:
-            include_mask = u2_edges[1:] <= u_s_max
+            if u_s_max <= u2_edges[0]:
+                include_mask = np.zeros(u2_edges.size - 1, dtype=bool)
+            elif u_s_max >= u2_edges[-1]:
+                include_mask = np.ones(u2_edges.size - 1, dtype=bool)
+            else:
+                include_mask = u2_edges[1:] <= u_s_max
             u2_contrib = np.where(include_mask, u2_contrib, 0.0)
+        total_contrib_u2 = float(u2_contrib.sum())
+        if not np.isfinite(total_contrib_u2) or total_contrib_u2 < 0.0:
+            raise RuntimeError("Invalid U-grid configuration produced invalid probability mass.")
+
+        captured_u1_mass = total_contrib_u1
+        captured_u2_mass = total_contrib_u2
+        captured_domain_mass = float(captured_u1_mass * captured_u2_mass)
 
         r_edges = self._map_u_to_distribution(
             u1_edges,
@@ -389,6 +627,8 @@ class ReliabilityIntegrator:
         mixed_idx = np.argwhere(mixed_mask)
 
         return _DistributionGridData(
+            u_min=u_min,
+            u_max=u_max,
             u1_edges=u1_edges,
             u2_edges=u2_edges,
             u1_centers=u1_centers,
@@ -400,28 +640,37 @@ class ReliabilityIntegrator:
             u1_center_grid=u1_center_grid,
             u2_center_grid=u2_center_grid,
             mixed_indices=mixed_idx,
+            captured_u1_mass=captured_u1_mass,
+            captured_u2_mass=captured_u2_mass,
+            captured_domain_mass=captured_domain_mass,
+            target_domain_mass=float(target_domain_mass),
         )
 
     def _build_axis_edges(
         self,
         dist: ot.Distribution,
         curve_levels: np.ndarray | None,
+        u_min: float,
+        u_max: float,
     ) -> np.ndarray:
         """Build axis edges from mandatory knot edges plus regular fill-in."""
         cfg = self.config
-        mandatory = np.array([cfg.u_min, cfg.u_max], dtype=float)
-        mapped_knots = self._map_curve_levels_to_u_edges(dist=dist, levels=curve_levels)
+        mandatory = np.array([u_min, u_max], dtype=float)
+        mapped_knots = self._map_curve_levels_to_u_edges(dist=dist, levels=curve_levels, u_min=u_min, u_max=u_max)
         if mapped_knots.size > 0:
             mandatory = np.r_[mandatory, mapped_knots]
-        mandatory_edges = np.sort(np.unique(mandatory))
+        mandatory_edges = self._deduplicate_with_min_spacing(mandatory, self._MIN_U_EDGE_SPACING)
 
         if mandatory_edges.size >= cfg.coarse_points:
             # Keep all mandatory edges; do not downsample knot-aligned boundaries.
             return mandatory_edges
 
         n_extra = int(cfg.coarse_points - mandatory_edges.size)
-        regular = np.linspace(cfg.u_min, cfg.u_max, cfg.coarse_points)
+        regular = np.linspace(u_min, u_max, cfg.coarse_points)
         regular_pool = regular[~np.isin(regular, mandatory_edges)]
+        if regular_pool.size > 0 and mandatory_edges.size > 0 and self._MIN_U_EDGE_SPACING > 0.0:
+            distance_to_mandatory = np.min(np.abs(regular_pool[:, None] - mandatory_edges[None, :]), axis=1)
+            regular_pool = regular_pool[distance_to_mandatory >= self._MIN_U_EDGE_SPACING]
         if regular_pool.size == 0 or n_extra <= 0:
             return mandatory_edges
 
@@ -444,6 +693,8 @@ class ReliabilityIntegrator:
         self,
         dist: ot.Distribution,
         levels: np.ndarray | None,
+        u_min: float,
+        u_max: float,
     ) -> np.ndarray:
         """Map curve hazard-level knots to interior U-space edges."""
         if levels is None:
@@ -453,6 +704,10 @@ class ReliabilityIntegrator:
         if level_arr.size == 0:
             return np.array([], dtype=float)
 
+        level_arr = level_arr[np.isfinite(level_arr)]
+        if level_arr.size == 0:
+            return np.array([], dtype=float)
+        level_arr = self._deduplicate_with_min_spacing(level_arr, self._CURVE_LEVEL_MIN_SPACING_X)
         level_arr = level_arr[np.isfinite(level_arr)]
         if level_arr.size == 0:
             return np.array([], dtype=float)
@@ -469,12 +724,11 @@ class ReliabilityIntegrator:
         if u_candidates.size == 0:
             return np.array([], dtype=float)
 
-        cfg = self.config
-        in_range = np.isfinite(u_candidates) & (u_candidates > cfg.u_min) & (u_candidates < cfg.u_max)
+        in_range = np.isfinite(u_candidates) & (u_candidates > u_min) & (u_candidates < u_max)
         if not np.any(in_range):
             return np.array([], dtype=float)
 
-        return np.sort(np.unique(u_candidates[in_range]))
+        return self._deduplicate_with_min_spacing(u_candidates[in_range], self._MIN_U_EDGE_SPACING)
 
     def _limit_state_curve(self, u_values: np.ndarray) -> np.ndarray:
         """Return U-space coordinates of the z=0 curve for supplied R-axis samples.
@@ -753,10 +1007,9 @@ class ReliabilityIntegrator:
 
         return list(active_cells.values()), converged, iterations, remaining_error
 
-    def _integrate_distributions_adaptive(self) -> FailureSamples:
+    def _integrate_distributions_adaptive(self, grid: _DistributionGridData) -> FailureSamples:
         """Integrate failure mass with adaptive mixed-cell refinement."""
         cfg = self.config
-        grid = self._compute_distribution_grid()
 
         w_fail_coarse = grid.cell_weights[grid.fail_mask]
         u1_fail_coarse = grid.u1_center_grid[grid.fail_mask]
@@ -806,10 +1059,81 @@ class ReliabilityIntegrator:
             adaptive_max_depth_reached_cells=max_depth_reached_cells,
         )
 
+    def _run_bounds_pass(
+        self,
+        bounds: tuple[float, float],
+        previous_pass_pf: float | None,
+    ) -> _BoundsPassResult:
+        """Execute one full integration pass for fixed U-bounds."""
+        cfg = self.config
+        grid = self._compute_distribution_grid(u_min=bounds[0], u_max=bounds[1])
+        samples = self._integrate_distributions_adaptive(grid)
+
+        pf_est = float(samples.weights.sum()) if samples.weights.size > 0 else 0.0
+        truncation_pf_error_bound = self._truncation_pf_error_bound(grid)
+        adaptive_error = float(samples.adaptive_remaining_pf_error or 0.0)
+        total_pf_error_bound = adaptive_error + truncation_pf_error_bound
+        denom = max(pf_est, cfg.adaptive_pf_floor)
+        target_abs = (float(np.exp(cfg.adaptive_logpf_tol)) - 1.0) * denom
+
+        beta_stable = True
+        if previous_pass_pf is not None:
+            beta_prev = float(beta_from_pf(max(previous_pass_pf, cfg.adaptive_pf_floor), tail="upper"))
+            beta_curr = float(beta_from_pf(denom, tail="upper"))
+            beta_stable = abs(beta_curr - beta_prev) <= cfg.adaptive_beta_tol
+
+        converged = total_pf_error_bound <= target_abs and beta_stable
+        estimated_logpf_error = float(np.log1p(total_pf_error_bound / denom)) if total_pf_error_bound > 0.0 else 0.0
+
+        samples.converged = converged
+        samples.estimated_logpf_error = estimated_logpf_error
+        samples.truncation_pf_error_bound = truncation_pf_error_bound
+        samples.u_bounds_used = (float(grid.u_min), float(grid.u_max))
+
+        return _BoundsPassResult(
+            samples=samples,
+            truncation_pf_error_bound=truncation_pf_error_bound,
+            total_pf_error_bound=total_pf_error_bound,
+            estimated_logpf_error=estimated_logpf_error,
+            converged=converged,
+            u_bounds_used=(float(grid.u_min), float(grid.u_max)),
+        )
+
     # Distribution-based implementation
     def _integrate_distributions(self) -> FailureSamples:
-        """Integrate probability mass using adaptive mixed-cell refinement."""
-        return self._integrate_distributions_adaptive()
+        """Integrate probability mass with optional automatic bounds widening."""
+        cfg = self.config
+        auto_bounds = cfg.u_manual_bounds is None
+        bounds = self._initial_u_bounds()
+        previous_pass_pf: float | None = None
+        latest_pass: _BoundsPassResult | None = None
+
+        while True:
+            pass_result = self._run_bounds_pass(bounds, previous_pass_pf)
+            latest_pass = pass_result
+            pf_est = float(pass_result.samples.weights.sum()) if pass_result.samples.weights.size > 0 else 0.0
+            denom = max(pf_est, cfg.adaptive_pf_floor)
+            target_abs = (float(np.exp(cfg.adaptive_logpf_tol)) - 1.0) * denom
+            adaptive_error = float(pass_result.samples.adaptive_remaining_pf_error or 0.0)
+            truncation_drives_failure = pass_result.truncation_pf_error_bound > max(0.0, target_abs - adaptive_error)
+            beta_unstable_only = (pass_result.total_pf_error_bound <= target_abs) and (not pass_result.converged)
+
+            if pass_result.converged:
+                break
+            if not auto_bounds:
+                break
+            if not (truncation_drives_failure or beta_unstable_only):
+                break
+
+            next_bounds = self._widen_bounds(bounds)
+            if next_bounds is None:
+                break
+            previous_pass_pf = pf_est
+            bounds = next_bounds
+
+        if latest_pass is None:
+            raise RuntimeError("Integration failed before producing any bounds pass.")
+        return latest_pass.samples
 
     def _initialize_distributions(self) -> None:
         """Resolve the actual R/S distributions, honoring curve inputs when provided."""
@@ -877,4 +1201,8 @@ class ReliabilityIntegrator:
             adaptive_estimated_logpf_error=samples.adaptive_estimated_logpf_error,
             adaptive_remaining_pf_error=samples.adaptive_remaining_pf_error,
             adaptive_max_depth_reached_cells=samples.adaptive_max_depth_reached_cells,
+            converged=samples.converged,
+            estimated_logpf_error=samples.estimated_logpf_error,
+            truncation_pf_error_bound=samples.truncation_pf_error_bound,
+            u_bounds_used=samples.u_bounds_used,
         )
