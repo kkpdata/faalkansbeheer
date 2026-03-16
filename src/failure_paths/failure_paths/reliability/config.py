@@ -22,7 +22,7 @@ class IntegrationConfig(BaseModel):
     )
 
     u_tail_probability: float = Field(
-        1e-12,
+        1e-23,
         gt=0.0,
         lt=1.0,
         description=(
@@ -36,12 +36,20 @@ class IntegrationConfig(BaseModel):
     )
     coarse_points: int = Field(101, ge=2, description="Number of U-grid edges (>=2).")
     adaptive_logpf_tol: float = Field(
-        1e-2,
+        1e-4,
         gt=0.0,
         description="Target tolerance for estimated log(Pf) error, i.e. log(1 + delta_pf / pf).",
     )
+    adaptive_abs_pf_tol: float | None = Field(
+        None,
+        ge=0.0,
+        description=(
+            "Optional absolute Pf error tolerance. "
+            "Effective adaptive/global error target is max(relative_target, adaptive_abs_pf_tol)."
+        ),
+    )
     adaptive_beta_tol: float = Field(
-        1e-3,
+        1e-4,
         gt=0.0,
         description="Stabilization tolerance on consecutive beta_pf estimates.",
     )
@@ -51,7 +59,7 @@ class IntegrationConfig(BaseModel):
         description="Maximum recursive depth for adaptive mixed-cell refinement.",
     )
     adaptive_split_factor: int = Field(
-        2,
+        4,
         ge=2,
         description="Per-axis split factor applied when refining a mixed cell adaptively.",
     )

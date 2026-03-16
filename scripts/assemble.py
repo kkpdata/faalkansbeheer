@@ -59,7 +59,12 @@ def integrate_and_plot(
 
     # visualize integration grid
     fig, axs = plt.subplots(ncols=2, figsize=(12, 5), dpi=100)
-    plot_integration_grid(integrator, ax=axs[0])
+    try:
+        plot_integration_grid(integrator, ax=axs[0])
+    except RuntimeError as exc:
+        axs[0].set_axis_off()
+        axs[0].text(0.5, 0.5, str(exc), ha="center", va="center", wrap=True)
+        axs[0].set_title("Integration Grid Unavailable")
 
     # Keep the internal water-level resolution, but ensure the outer bins include all failure samples.
     hist_edges = np.asarray(water_levels, dtype=float).copy()

@@ -45,7 +45,7 @@ def test_fragility_distribution_matches_curve() -> None:
     quantile_probs = np.array([0.05, 0.4, 0.8])
     quantiles = np.array(distribution.computeQuantile(quantile_probs)).flatten()
     roundtrip = np.array(distribution.computeCDF(quantiles[:, np.newaxis])).reshape(quantiles.shape)
-    assert np.allclose(roundtrip, quantile_probs, atol=1e-6)
+    assert np.allclose(roundtrip, quantile_probs, atol=1e-10)
 
 
 def test_linear_interpolator_plateau_value() -> None:
@@ -68,6 +68,41 @@ def test_linear_interpolator_plateau_inverse() -> None:
     expected_levels = np.array([1.5, 3.0, 3.5])
     result = interpolator.value(beta_query)
     assert np.allclose(result, expected_levels)
+
+
+def test_hazard_curve_flat_quantile_is_finite_and_left_endpoint_based() -> None:
+    curve = HazardCurve([0.0, 1.0, 2.0], [0.5, 0.5, 0.5])
+    quantiles = curve.quantile(np.array([0.4, 0.5, 0.6]))
+    assert np.all(np.isfinite(quantiles))
+    assert quantiles[1] == pytest.approx(0.0)
+    assert quantiles[0] == pytest.approx(0.0)
+    assert quantiles[2] == pytest.approx(2.0)
+
+
+def test_hazard_curve_quantile_reuses_cached_inverse_interpolator() -> None:
+    curve = HazardCurve([0.0, 1.0, 2.0, 3.0], [0.95, 0.7, 0.25, 0.05])
+    cached = curve._inverse_level_interpolator
+    assert cached is not None
+
+    q = np.array([0.1, 0.3, 0.6, 0.9], dtype=float)
+    first = curve.quantile(q)
+    second = curve.quantile(q)
+
+    assert np.allclose(first, second, rtol=0.0, atol=1e-14)
+    assert curve._inverse_level_interpolator is cached
+
+
+def test_flat_curve_quantile_uses_cached_flat_inverse_path() -> None:
+    curve = HazardCurve([0.0, 1.0, 2.0], [0.5, 0.5, 0.5])
+    assert curve._inverse_level_interpolator is None
+    q = np.array([0.1, 0.5, 0.9], dtype=float)
+    out = curve.quantile(q)
+    assert np.all(np.isfinite(out))
+
+
+def test_fragility_curve_requires_non_increasing_betas() -> None:
+    with pytest.raises(ValueError):
+        FragilityCurve([0.0, 1.0, 2.0], [0.0, 1.0, 0.5])
 
 
 def test_interpolate_beta_curve_handles_infinite_knots_and_tails() -> None:

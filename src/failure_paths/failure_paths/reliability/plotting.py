@@ -4,11 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import openturns as ot
 from matplotlib.axes import Axes
-from matplotlib.collections import LineCollection
-from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
 
 from .core import ReliabilityIntegrator
 from .results import IntegrationResult
@@ -21,7 +17,7 @@ def plot_integration_grid(
     figsize: tuple[float, float] = (6.0, 6.0),
     limit_points: int = 1025,
 ) -> tuple[Figure, Axes]:
-    """Visualize the coarse and refined U-grid along with the z=0 curve.
+    """Deprecated grid plotting API.
 
     Parameters
     ----------
@@ -36,94 +32,19 @@ def plot_integration_grid(
 
     Returns
     -------
-    Figure
-        Matplotlib figure containing the visualization.
-    Axes
-        Axes instance on which the plot was rendered.
+    tuple[Figure, Axes]
+        This deprecated function always raises and therefore does not return.
+
+    Raises
+    ------
+    RuntimeError
+        Always raised because the 2D grid integrator was removed in favor of the
+        1D independent integration path.
     """
-    grid = integrator._compute_distribution_grid()
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
-    else:
-        fig = ax.figure
-
-    failure_color = "#c0392b"
-    safe_color = "#1e8449"
-    cmap = ListedColormap([failure_color, safe_color])
-    cmap.set_bad(alpha=0.0)
-    norm = BoundaryNorm([-0.5, 0.5, 1.5], cmap.N)
-
-    coarse_values = np.full(grid.fail_mask.shape, np.nan, dtype=float)
-    coarse_values[grid.fail_mask] = 0.0
-    coarse_values[grid.safe_mask] = 1.0
-
-    ax.pcolormesh(
-        grid.u1_edges,
-        grid.u2_edges,
-        coarse_values.T,
-        cmap=cmap,
-        norm=norm,
-        shading="auto",
-        zorder=1,
+    raise RuntimeError(
+        "plot_integration_grid is deprecated: the 2D grid integrator has been removed "
+        "in favor of the 1D independent integration path."
     )
-
-    u1_limits = (float(grid.u1_edges[0]), float(grid.u1_edges[-1]))
-    u2_limits = (float(grid.u2_edges[0]), float(grid.u2_edges[-1]))
-    ax.vlines(grid.u1_edges, u2_limits[0], u2_limits[1], color="#d0d0d0", linewidth=0.4, zorder=3)
-    ax.hlines(grid.u2_edges, u1_limits[0], u1_limits[1], color="#d0d0d0", linewidth=0.4, zorder=3)
-
-    adaptive_cells, _, _, _ = integrator._adaptive_leaf_cells(grid)
-    if adaptive_cells:
-        adaptive_segments: list[list[tuple[float, float]]] = []
-        for cell in adaptive_cells:
-            value = 0.0 if cell.fail_estimate else 1.0
-            ax.pcolormesh(
-                np.array([cell.u1_left, cell.u1_right]),
-                np.array([cell.u2_left, cell.u2_right]),
-                np.array([[value]]),
-                cmap=cmap,
-                norm=norm,
-                shading="auto",
-                zorder=2,
-            )
-            adaptive_segments.extend(
-                [
-                    [(cell.u1_left, cell.u2_left), (cell.u1_right, cell.u2_left)],
-                    [(cell.u1_left, cell.u2_right), (cell.u1_right, cell.u2_right)],
-                    [(cell.u1_left, cell.u2_left), (cell.u1_left, cell.u2_right)],
-                    [(cell.u1_right, cell.u2_left), (cell.u1_right, cell.u2_right)],
-                ]
-            )
-        ax.add_collection(LineCollection(adaptive_segments, colors="#666666", linewidths=0.35, zorder=4))
-
-    u_line = np.linspace(u1_limits[0], u1_limits[1], max(3, limit_points))
-    u2_line = integrator._limit_state_curve(u_line)
-    mask = np.isfinite(u2_line)
-    if np.any(mask):
-        ax.plot(u_line[mask], u2_line[mask], color="black", linewidth=1.4, label="z = 0", zorder=5)
-
-    ax.set_xlabel("$u_R$")
-    ax.set_ylabel("$u_S$")
-    ax.set_xlim(u1_limits)
-    ax.set_ylim(u2_limits)
-    ax.set_aspect("equal", adjustable="box")
-
-    handles = [
-        Patch(facecolor=failure_color, edgecolor="black", label="Failure"),
-        Patch(facecolor=safe_color, edgecolor="black", label="Safe"),
-        Line2D([0], [0], color="black", linewidth=1.4, label="z = 0"),
-    ]
-    ax.legend(
-        handles=handles,
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        borderaxespad=0.0,
-    )
-
-    fig.tight_layout()
-
-    return fig, ax
 
 
 def prepare_failure_histogram(

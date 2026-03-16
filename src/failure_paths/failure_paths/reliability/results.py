@@ -22,6 +22,7 @@ class FailureSamples:
     adaptive_remaining_pf_error: float | None = None
     adaptive_max_depth_reached_cells: int = 0
     converged: bool | None = None
+    convergence_reason: str | None = None
     estimated_logpf_error: float | None = None
     truncation_pf_error_bound: float | None = None
     u_bounds_used: tuple[float, float] | None = None
@@ -39,6 +40,8 @@ class FailureSamples:
         if self.converged is not None:
             global_err = f"{self.estimated_logpf_error:.3e}" if self.estimated_logpf_error is not None else "None"
             global_bits = f", converged={self.converged}, global_err={global_err}"
+            if self.convergence_reason is not None:
+                global_bits += f", reason={self.convergence_reason}"
         return (
             "FailureSamples("
             f"count={self.weights.size}, "
@@ -67,6 +70,7 @@ class IntegrationResult:
     adaptive_remaining_pf_error: float | None = None
     adaptive_max_depth_reached_cells: int = 0
     converged: bool | None = None
+    convergence_reason: str | None = None
     estimated_logpf_error: float | None = None
     truncation_pf_error_bound: float | None = None
     u_bounds_used: tuple[float, float] | None = None
@@ -79,6 +83,7 @@ class IntegrationResult:
             "beta_pf": float(self.beta_pf),
             "alpha": self.alpha.tolist(),
             "converged": self.converged,
+            "convergence_reason": self.convergence_reason,
             "estimated_logpf_error": (
                 float(self.estimated_logpf_error) if self.estimated_logpf_error is not None else None
             ),
@@ -125,6 +130,7 @@ class IntegrationResult:
                 ),
                 "adaptive_max_depth_reached_cells": self.adaptive_max_depth_reached_cells,
                 "converged": self.converged,
+                "convergence_reason": self.convergence_reason,
                 "estimated_logpf_error": (
                     float(self.estimated_logpf_error) if self.estimated_logpf_error is not None else None
                 ),
@@ -165,6 +171,7 @@ class IntegrationResult:
                 f"adaptive_iterations={self.adaptive_iterations}"
             )
         converged_str = f", converged={self.converged}" if self.converged is not None else ""
+        reason_str = f", reason={self.convergence_reason}" if self.convergence_reason is not None else ""
         trunc_str = (
             f", trunc_pf_err={self.truncation_pf_error_bound:.3e}" if self.truncation_pf_error_bound is not None else ""
         )
@@ -177,6 +184,7 @@ class IntegrationResult:
             f"alpha={[round(a, 3) for a in self.alpha.tolist()]}"
             f"{hazard_str}"
             f"{converged_str}"
+            f"{reason_str}"
             f"{trunc_str}"
             f"{bounds_str}"
             f"{adaptive_str})"

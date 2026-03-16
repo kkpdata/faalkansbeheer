@@ -1,11 +1,11 @@
 import math
+import warnings
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt
 import numpy as np
 import openturns as ot
 import pytest
@@ -21,15 +21,15 @@ from failure_paths.reliability import (
 from failure_paths.reliability.plotting import plot_integration_grid, prepare_failure_histogram
 from pydantic import ValidationError
 
-ANALYTIC_BETA_REL_TOL = 3e-4
-DIRAC_BETA_ABS_TOL = 1e-10
-NORMAL_STEP_BETA_REL_TOL = 1e-7
-HAZARD_STEP_BETA_REL_TOL = 1e-7
+ANALYTIC_BETA_REL_TOL = 1e-6
+DIRAC_BETA_ABS_TOL = 1e-12
+NORMAL_STEP_BETA_REL_TOL = 1e-11
+HAZARD_STEP_BETA_REL_TOL = 1e-12
 FORM_REFERENCE_SEED = 12345
-FORM_BETA_REL_TOL = 2e-4
-FORM_ALPHA_REL_TOL = 2e-2
-CURVE_VS_DIST_BETA_REL_TOL = 1.5e-4
-ZERO_TRUNCATION_PF_ERR_ATOL = 5e-12
+FORM_BETA_REL_TOL = 1e-4
+FORM_ALPHA_REL_TOL = 1e-4
+CURVE_VS_DIST_BETA_REL_TOL = 1e-6
+ZERO_TRUNCATION_PF_ERR_ATOL = 1e-14
 GENERIC_REL_FALLBACK_TOL = 1e-12
 GENERIC_BETA_ABS_FALLBACK_TOL = 1e-12
 GENERIC_PF_ABS_FALLBACK_TOL = 1e-15
@@ -317,35 +317,36 @@ def test_grid_cell_weights_are_not_renormalized() -> None:
         r_distribution=ot.Normal(0.0, 1.0),
         s_distribution=ot.Normal(0.0, 1.0),
         coarse_points=101,
+        u_manual_bounds=(-4.0, 4.0),
     )
     grid = ReliabilityIntegrator(config=config)._compute_distribution_grid()
 
-    assert 0.0 < grid.captured_domain_mass < 1.0
-    assert np.isclose(grid.cell_weights.sum(), grid.captured_domain_mass, rtol=0.0, atol=1e-15)
+    assert 0.0 < grid.captured_mass < 1.0
+    assert np.isclose(grid.interval_probs.sum(), grid.captured_mass, rtol=0.0, atol=1e-15)
 
 
-def test_discrete_support_levels_are_cross_injected_into_u_edges() -> None:
-    s_level = 1.7
+def test_discrete_support_levels_from_r_are_injected_into_s_u_edges() -> None:
+    r_level = 1.7
     cfg = IntegrationConfig(
-        r_distribution=ot.Normal(2.0, 0.25),
-        s_distribution=ot.Dirac(s_level),
+        r_distribution=ot.Dirac(r_level),
+        s_distribution=ot.Normal(2.0, 0.25),
         coarse_points=101,
     )
     integrator = ReliabilityIntegrator(cfg)
     grid = integrator._compute_distribution_grid()
 
-    cdf = float(np.clip(integrator.r_distribution.computeCDF(s_level), 0.0, 1.0))
+    cdf = float(np.clip(integrator.s_distribution.computeCDF(r_level), 0.0, 1.0))
     expected_u = float(beta_from_pf(cdf, tail="lower"))
     assert np.isfinite(expected_u)
-    assert np.any(np.isclose(grid.u1_edges, expected_u, rtol=0.0, atol=1e-12))
+    assert np.any(np.isclose(grid.u2_edges, expected_u, rtol=0.0, atol=1e-12))
 
 
-def test_distribution_singularities_are_cross_injected_into_u_edges() -> None:
+def test_distribution_singularities_on_s_are_injected_into_u_edges() -> None:
     singular_level = 0.3
     mixture = ot.Mixture([ot.Dirac(singular_level), ot.Normal(0.0, 1.0)], [0.2, 0.8])
     cfg = IntegrationConfig(
-        r_distribution=mixture,
-        s_distribution=ot.Normal(0.0, 1.0),
+        r_distribution=ot.Normal(0.0, 1.0),
+        s_distribution=mixture,
         coarse_points=101,
     )
     integrator = ReliabilityIntegrator(cfg)
@@ -370,6 +371,7 @@ def test_manual_bounds_can_prevent_global_convergence_via_truncation() -> None:
     assert result.truncation_pf_error_bound is not None
     assert result.truncation_pf_error_bound > 1e-3
     assert result.converged is False
+    assert result.convergence_reason == "truncation_limited"
 
 
 def test_auto_bounds_widening_reduces_truncation_and_can_recover_convergence() -> None:
@@ -386,6 +388,28 @@ def test_auto_bounds_widening_reduces_truncation_and_can_recover_convergence() -
     assert result.u_bounds_used[1] > initial_abs_bound
     assert result.truncation_pf_error_bound is not None
     assert result.converged is True
+    assert result.convergence_reason == "converged_relative_tol"
+
+
+def test_absolute_pf_tolerance_can_recover_adaptive_limited_case() -> None:
+    base_kwargs = {
+        "r_distribution": ot.Normal(1.0, 1.0),
+        "s_distribution": ot.Normal(0.0, 1.0),
+        "coarse_points": 41,
+        "adaptive_max_depth": 1,
+        "adaptive_logpf_tol": 1e-8,
+        "u_tail_probability": 1e-12,
+    }
+
+    strict_cfg = IntegrationConfig(**base_kwargs)
+    strict_result = ReliabilityIntegrator(strict_cfg).run()
+    assert strict_result.converged is False
+    assert strict_result.convergence_reason == "adaptive_limited"
+
+    relaxed_cfg = IntegrationConfig(**base_kwargs, adaptive_abs_pf_tol=1e-3)
+    relaxed_result = ReliabilityIntegrator(relaxed_cfg).run()
+    assert relaxed_result.converged is True
+    assert relaxed_result.convergence_reason == "converged_absolute_tol"
 
 
 def test_config_manual_bounds_validation() -> None:
@@ -414,6 +438,160 @@ def test_integrator_runs_with_zero_adaptive_depth() -> None:
 
     assert math.isfinite(result.beta_star)
     assert result.alpha.shape == (2,)
+
+
+def test_alpha_is_nan_when_beta_star_is_zero_without_runtime_warning() -> None:
+    config = IntegrationConfig(
+        r_distribution=ot.Normal(0.0, 1.0),
+        s_distribution=ot.Normal(0.0, 1.0),
+        coarse_points=101,
+    )
+    integrator = ReliabilityIntegrator(config=config)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = integrator.run()
+    assert all(item.category is not RuntimeWarning for item in caught)
+    assert result.beta_star == pytest.approx(0.0)
+    assert np.all(np.isnan(result.alpha))
+
+
+def test_design_point_solver_optimizes_all_feasible_intervals() -> None:
+    config = IntegrationConfig(
+        r_distribution=ot.Normal(0.0, 1.0),
+        s_distribution=ot.Normal(0.0, 1.0),
+        coarse_points=81,
+    )
+    integrator = ReliabilityIntegrator(config=config)
+
+    # Two feasible basins separated by an infeasible gap.
+    # Global optimum is in the right basin at the feasibility boundary.
+    def mocked_limit_state_curve(u_values: np.ndarray) -> np.ndarray:
+        u = np.asarray(u_values, dtype=float)
+        out = np.full_like(u, np.nan, dtype=float)
+        left_mask = u <= -1.0
+        right_mask = u >= 1.0
+        out[left_mask] = (u[left_mask] + 2.0) ** 2 + 0.3
+        out[right_mask] = (u[right_mask] - 1.5) ** 2 + 0.2
+        return out
+
+    integrator._limit_state_curve = mocked_limit_state_curve  # type: ignore[method-assign]
+
+    beta_star, alpha = integrator._solve_design_point(bounds=(-4.0, 4.0))
+
+    assert math.isfinite(beta_star)
+
+    inferred_u1 = -alpha[0] * beta_star
+
+    # Assert the selected point is in the right feasible basin.
+    assert inferred_u1 > 0.0
+
+    # Assert objective quality against the known right-basin boundary optimum
+    # (u1=1.0, u2=0.45) while allowing small numerical optimizer variance.
+    expected_right_obj = 1.0**2 + 0.45**2
+    found_obj = beta_star**2
+    assert found_obj <= expected_right_obj + 3e-2
+
+    # Also ensure it beats the left-basin boundary candidate.
+    left_boundary_obj = (-1.0) ** 2 + 1.3**2
+    assert found_obj < left_boundary_obj
+
+
+def test_combined_failure_metrics_match_previous_paths() -> None:
+    integrator = ReliabilityIntegrator(_default_config(coarse_points=41))
+    s_values = np.linspace(-3.0, 4.0, 33)
+
+    combined_f, combined_u1 = integrator._failure_cdf_and_u_for_r_equals_s(s_values, include_u1_equivalent=True)
+    assert combined_u1 is not None
+
+    f_ref = integrator._failure_cdf_at_s(s_values)
+    u1_ref = integrator._u_for_r_equals_s(s_values)
+
+    assert np.allclose(combined_f, f_ref, rtol=0.0, atol=1e-14)
+    assert np.allclose(combined_u1, u1_ref, rtol=0.0, atol=1e-14)
+
+
+def test_split_interval_batch_matches_manual_interval_formula() -> None:
+    config = _default_config(coarse_points=41, adaptive_split_factor=3, adaptive_probe_factor=4)
+    integrator = ReliabilityIntegrator(config)
+    parent = integrator._build_adaptive_interval(u_left=-1.25, u_right=0.75, prob_weight=0.2, depth=1)
+
+    children = integrator._split_adaptive_interval(parent)
+
+    def _manual_interval(u_left: float, u_right: float, prob_weight: float, depth: int) -> tuple[float, ...]:
+        center_u2 = 0.5 * (u_left + u_right)
+        center_prob_cdf, center_prob_survival = integrator._normal_probabilities(
+            np.array([center_u2], dtype=float),
+            compute_cdf=True,
+            compute_survival=True,
+        )
+        center_s = float(
+            integrator._map_u_to_distribution(
+                np.array([center_u2], dtype=float),
+                integrator.s_distribution,
+                u_values_cdf=center_prob_cdf,
+                u_values_survival=center_prob_survival,
+            )[0]
+        )
+        center_f = float(integrator._failure_cdf_at_s(np.array([center_s], dtype=float))[0])
+        center_u1 = float(integrator._u_for_r_equals_s(np.array([center_s], dtype=float))[0])
+        center_mass = prob_weight * center_f
+
+        probe_edges = np.linspace(u_left, u_right, config.adaptive_probe_factor + 1)
+        probe_cdf, probe_survival = integrator._normal_probabilities(
+            probe_edges,
+            compute_cdf=True,
+            compute_survival=True,
+        )
+        probe_probs = integrator._u_interval_probabilities(probe_edges, probe_cdf, probe_survival)
+        probe_centers = 0.5 * (probe_edges[1:] + probe_edges[:-1])
+        probe_center_cdf, probe_center_survival = integrator._normal_probabilities(
+            probe_centers,
+            compute_cdf=True,
+            compute_survival=True,
+        )
+        probe_s = integrator._map_u_to_distribution(
+            probe_centers,
+            integrator.s_distribution,
+            u_values_cdf=probe_center_cdf,
+            u_values_survival=probe_center_survival,
+        )
+        probe_f = integrator._failure_cdf_at_s(probe_s).reshape(-1)
+        probe_mass = float(np.sum(probe_probs.reshape(-1) * probe_f))
+        error_est = abs(probe_mass - center_mass)
+        refinable = depth < config.adaptive_max_depth and error_est > 0.0
+        return (
+            float(u_left),
+            float(u_right),
+            float(prob_weight),
+            float(center_u2),
+            float(center_s),
+            float(center_u1),
+            float(probe_mass),
+            float(error_est),
+            float(refinable),
+        )
+
+    split_factor = config.adaptive_split_factor
+    edges = np.linspace(parent.u_left, parent.u_right, split_factor + 1)
+    edge_cdf, edge_survival = integrator._normal_probabilities(edges, compute_cdf=True, compute_survival=True)
+    child_probs = integrator._u_interval_probabilities(edges, edge_cdf, edge_survival)
+    manual_children = [
+        _manual_interval(float(edges[i]), float(edges[i + 1]), float(child_probs[i]), parent.depth + 1)
+        for i in range(split_factor)
+        if child_probs[i] > 0.0
+    ]
+
+    assert len(children) == len(manual_children)
+    for child, manual in zip(children, manual_children):
+        assert child.u_left == pytest.approx(manual[0])
+        assert child.u_right == pytest.approx(manual[1])
+        assert child.prob_weight == pytest.approx(manual[2])
+        assert child.center_u2 == pytest.approx(manual[3])
+        assert child.center_s == pytest.approx(manual[4])
+        assert child.center_u1 == pytest.approx(manual[5])
+        assert child.mass_est == pytest.approx(manual[6], rel=0.0, abs=1e-14)
+        assert child.error_est == pytest.approx(manual[7], rel=0.0, abs=1e-14)
+        assert float(child.refinable) == pytest.approx(manual[8])
 
 
 def test_integrator_matches_form_reference() -> None:
@@ -524,6 +702,22 @@ def test_hazard_curve_beta_mapping_roundtrip() -> None:
     assert np.allclose(reconstructed, [0.0, 4.0], atol=1e-6)
 
 
+def test_fully_flat_curves_run_end_to_end() -> None:
+    hazard = HazardCurve([0.0, 1.0, 2.0], [0.5, 0.5, 0.5])
+    fragility = FragilityCurve([0.0, 1.0, 2.0], [1.0, 1.0, 1.0])
+    config = IntegrationConfig(
+        r_distribution=None,
+        s_distribution=None,
+        hazard_curve=hazard,
+        fragility_curve=fragility,
+        coarse_points=31,
+        u_manual_bounds=(-2.0, 2.0),
+    )
+    result = ReliabilityIntegrator(config=config).run()
+    assert np.isfinite(result.pf)
+    assert 0.0 <= result.pf <= 1.0
+
+
 def test_curve_knots_are_injected_into_u_grid_edges() -> None:
     hazard = HazardCurve([0.0, 1.0, 2.0, 3.0], [0.98, 0.8, 0.2, 0.02])
     fragility = FragilityCurve([0.0, 1.0, 2.0, 3.0], [2.0, 0.5, -0.5, -2.0])
@@ -539,21 +733,13 @@ def test_curve_knots_are_injected_into_u_grid_edges() -> None:
     integrator = ReliabilityIntegrator(config=config)
     grid = integrator._compute_distribution_grid()
 
-    r_levels = fragility.hazard_levels.astype(float)
-    r_cdf = np.array(integrator.r_distribution.computeCDF(r_levels[:, np.newaxis])).reshape(-1)
     u_bounds = config.u_manual_bounds
     assert u_bounds is not None
     u_min, u_max = u_bounds
-    expected_u1 = beta_from_pf(np.clip(r_cdf, 0.0, 1.0), tail="lower")
-    expected_u1 = expected_u1[(expected_u1 > u_min) & (expected_u1 < u_max) & np.isfinite(expected_u1)]
-
-    s_levels = hazard.hazard_levels.astype(float)
-    s_cdf = np.array(integrator.s_distribution.computeCDF(s_levels[:, np.newaxis])).reshape(-1)
+    merged_levels = np.unique(np.r_[hazard.hazard_levels.astype(float), fragility.hazard_levels.astype(float)])
+    s_cdf = np.array(integrator.s_distribution.computeCDF(merged_levels[:, np.newaxis])).reshape(-1)
     expected_u2 = beta_from_pf(np.clip(s_cdf, 0.0, 1.0), tail="lower")
     expected_u2 = expected_u2[(expected_u2 > u_min) & (expected_u2 < u_max) & np.isfinite(expected_u2)]
-
-    for u_val in np.unique(expected_u1):
-        assert np.any(np.isclose(grid.u1_edges, u_val, rtol=0.0, atol=1e-12))
 
     for u_val in np.unique(expected_u2):
         assert np.any(np.isclose(grid.u2_edges, u_val, rtol=0.0, atol=1e-12))
@@ -664,20 +850,8 @@ def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
 def test_integration_grid_plot_smoke(tmp_path: Path) -> None:
     config = _default_config(coarse_points=21)
     integrator = ReliabilityIntegrator(config=config)
-    fig, ax = plot_integration_grid(integrator)
-
-    assert fig.axes and fig.axes[0] is ax
-    assert ax.get_xlabel() == "$u_R$"
-    assert ax.get_ylabel() == "$u_S$"
-
-    labels = [line.get_label() for line in ax.get_lines()]
-    assert "z = 0" in labels
-
-    output = tmp_path / "grid.png"
-    fig.savefig(output, bbox_inches="tight")
-    assert output.exists()
-    assert output.stat().st_size > 0
-    plt.close(fig)
+    with pytest.raises(RuntimeError, match="deprecated"):
+        plot_integration_grid(integrator)
 
 
 def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
@@ -691,14 +865,8 @@ def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
         coarse_points=21,
     )
     integrator = ReliabilityIntegrator(config=config)
-    fig, ax = plot_integration_grid(integrator, limit_points=65)
-
-    assert fig.axes and fig.axes[0] is ax
-    output = tmp_path / "grid_hazard.png"
-    fig.savefig(output)
-    assert output.exists()
-    assert output.stat().st_size > 0
-    plt.close(fig)
+    with pytest.raises(RuntimeError, match="deprecated"):
+        plot_integration_grid(integrator, limit_points=65)
 
 
 def test_failure_histogram_conserves_probability() -> None:
@@ -749,3 +917,13 @@ def test_failure_histogram_handles_empty_samples() -> None:
         solicitation_distribution=ot.Normal(),
     )
     assert np.allclose(cond_hist["conditional_failure"], 0.0)
+
+
+def test_result_dict_exposes_convergence_reason() -> None:
+    config = _default_config(coarse_points=31)
+    result = ReliabilityIntegrator(config=config).run()
+
+    payload = result.to_dict(include_samples=False)
+    diagnostics = payload.get("diagnostics")
+    assert isinstance(diagnostics, dict)
+    assert diagnostics.get("convergence_reason") == result.convergence_reason
