@@ -67,7 +67,13 @@ def _left_endpoint_inverse_monotone(
 
 
 class _BetaCurveBase(ABC):
-    """Shared helper for hazard/fragility curves storing beta/level interpolators."""
+    """Shared helper for hazard/fragility curves storing beta/level interpolators.
+
+    Parameters
+    ----------
+    beta_inf_cap : float
+        Finite replacement used for infinite beta knot values.
+    """
 
     def __init__(self, beta_inf_cap: float = 1e6) -> None:
         self.std_normal = ot.Normal()
@@ -82,13 +88,48 @@ class _BetaCurveBase(ABC):
         self._inverse_flat_right_level: float | None = None
 
     def _sanitize_beta_knots(self, betas: np.ndarray) -> np.ndarray:
+        """Replace non-finite beta knots with finite caps.
+
+        Parameters
+        ----------
+        betas : np.ndarray
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         return np.nan_to_num(betas, posinf=self.beta_inf_cap, neginf=-self.beta_inf_cap)
 
     @abstractmethod
     def set_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
+        """Set level/beta knot data for the concrete curve implementation.
+
+        Parameters
+        ----------
+        hazard_levels : Sequence[float]
+            Input value.
+        betas : Sequence[float]
+            Input value.
+        """
         pass
 
     def _validate_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
+        """Validate monotonicity and shape constraints for level and beta knots.
+
+        Parameters
+        ----------
+        hazard_levels : Sequence[float]
+            Input value.
+        betas : Sequence[float]
+            Input value.
+
+        Raises
+        ------
+        ValueError
+            If knot lengths are inconsistent or hazard levels are not strictly increasing.
+        """
         if len(hazard_levels) < 2:
             raise ValueError("At least two points are required to build a curve.")
         if len(hazard_levels) != len(betas):
@@ -97,6 +138,20 @@ class _BetaCurveBase(ABC):
             raise ValueError("hazard_levels must be strictly increasing.")
 
     def probabilities_to_beta(self, probs: np.ndarray | float, tail: bool = False) -> np.ndarray:
+        """Convert probabilities to reliability-index values.
+
+        Parameters
+        ----------
+        probs : np.ndarray | float
+            Input value.
+        tail : bool
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         probs_arr = np.asarray(probs, dtype=float)
         probs_arr = np.clip(probs_arr, 0, 1)
         if tail:
@@ -106,20 +161,70 @@ class _BetaCurveBase(ABC):
         return np.nan_to_num(betas, nan=0.0, posinf=np.inf, neginf=-np.inf)
 
     def beta_to_probabilities(self, beta: np.ndarray | float) -> np.ndarray:
+        """Convert reliability-index values to lower-tail probabilities.
+
+        Parameters
+        ----------
+        beta : np.ndarray | float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         beta_arr = np.asarray(beta, dtype=float)
         return pf_from_beta(beta_arr, tail="lower")
 
     def cdf(self, hazard: np.ndarray | float) -> np.ndarray:
+        """Evaluate the cumulative probability at hazard levels.
+
+        Parameters
+        ----------
+        hazard : np.ndarray | float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         hazard_arr = np.asarray(hazard, dtype=float)
         beta_vals = self._beta_from_level.value(hazard_arr)
         return pf_from_beta(beta_vals, tail="lower")
 
     def survival(self, hazard: np.ndarray | float) -> np.ndarray:
+        """Evaluate the survival probability at hazard levels.
+
+        Parameters
+        ----------
+        hazard : np.ndarray | float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         hazard_arr = np.asarray(hazard, dtype=float)
         beta_vals = self._beta_from_level.value(hazard_arr)
         return pf_from_beta(beta_vals, tail="upper")
 
     def quantile(self, prob: np.ndarray | float, tail: bool = False) -> np.ndarray:
+        """Evaluate the inverse mapping from probability to hazard level.
+
+        Parameters
+        ----------
+        prob : np.ndarray | float
+            Input value.
+        tail : bool
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         prob_arr = np.asarray(prob, dtype=float)
         beta_values = self.probabilities_to_beta(prob_arr, tail=tail)
         return self._inverse_levels_from_beta(beta_values)
@@ -135,6 +240,20 @@ class _BetaCurveBase(ABC):
         return self._beta_from_level.value(hazard_arr)
 
     def _set_inverse_mapping(self, beta_knots: np.ndarray, level_knots: np.ndarray) -> None:
+        """Build and cache inverse interpolation data.
+
+        Parameters
+        ----------
+        beta_knots : np.ndarray
+            Input value.
+        level_knots : np.ndarray
+            Input value.
+
+        Raises
+        ------
+        ValueError
+            If beta and level knot arrays do not have identical lengths.
+        """
         beta_arr = np.asarray(beta_knots, dtype=float).reshape(-1)
         level_arr = np.asarray(level_knots, dtype=float).reshape(-1)
         if beta_arr.size != level_arr.size:
@@ -160,6 +279,23 @@ class _BetaCurveBase(ABC):
             self._inverse_flat_right_level = None
 
     def _inverse_levels_from_beta(self, beta_values: np.ndarray | float) -> np.ndarray:
+        """Evaluate cached inverse mapping from beta to hazard level.
+
+        Parameters
+        ----------
+        beta_values : np.ndarray | float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+
+        Raises
+        ------
+        RuntimeError
+            If inverse mapping caches are not initialized.
+        """
         beta_arr = np.asarray(beta_values, dtype=float)
         is_scalar = np.isscalar(beta_values)
         beta_flat = beta_arr.reshape(-1)
@@ -189,7 +325,17 @@ class _BetaCurveBase(ABC):
 
 
 class HazardCurve(_BetaCurveBase):
-    """Maps hazard levels to exceedance probabilities (cumulative distribution)."""
+    """Map hazard levels to exceedance probabilities (cumulative distribution).
+
+    Parameters
+    ----------
+    hazard_levels : Sequence[float]
+        Strictly increasing hazard levels.
+    exceedance_probs : Sequence[float]
+        Non-increasing exceedance probabilities.
+    beta_inf_cap : float
+        Finite replacement used for infinite beta knot values. Defaults to ``1e6``.
+    """
 
     def __init__(
         self,
@@ -202,6 +348,20 @@ class HazardCurve(_BetaCurveBase):
         self.set_levels(hazard_levels, exceedance_probs)
 
     def set_levels(self, hazard_levels: Sequence[float], exceedance_probs: Sequence[float]):
+        """Set level/beta knot data for the concrete curve implementation.
+
+        Parameters
+        ----------
+        hazard_levels : Sequence[float]
+            Input value.
+        exceedance_probs : Sequence[float]
+            Input value.
+
+        Raises
+        ------
+        ValueError
+            If exceedance probabilities increase or level validation fails.
+        """
         probs = np.asarray(exceedance_probs, dtype=float)
         probs = np.clip(probs, 0, 1)
         if np.any(np.diff(probs) > 0):
@@ -218,7 +378,17 @@ class HazardCurve(_BetaCurveBase):
 
 
 class FragilityCurve(_BetaCurveBase):
-    """Maps hazard levels to reliability indices assuming Pf = Φ(-β)."""
+    """Map hazard levels to reliability indices under ``Pf = Φ(-β)`` convention.
+
+    Parameters
+    ----------
+    hazard_levels : Sequence[float]
+        Strictly increasing hazard levels.
+    betas : Sequence[float]
+        Non-increasing reliability-index values.
+    beta_inf_cap : float
+        Finite replacement used for infinite beta knot values. Defaults to ``1e6``.
+    """
 
     def __init__(
         self,
@@ -231,6 +401,20 @@ class FragilityCurve(_BetaCurveBase):
         self.set_levels(hazard_levels, betas)
 
     def set_levels(self, hazard_levels: Sequence[float], betas: Sequence[float]):
+        """Set level/beta knot data for the concrete curve implementation.
+
+        Parameters
+        ----------
+        hazard_levels : Sequence[float]
+            Input value.
+        betas : Sequence[float]
+            Input value.
+
+        Raises
+        ------
+        ValueError
+            If beta values increase or level validation fails.
+        """
         betas = self._sanitize_beta_knots(np.asarray(betas, dtype=float))
         if np.any(np.diff(betas) > 0):
             raise ValueError("betas must be non-increasing.")

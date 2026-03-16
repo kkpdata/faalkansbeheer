@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-from failure_paths.common.prob import beta_from_pf, clamp_probabilities, pf_from_beta
+import pytest
+from failure_paths.common.prob import beta_from_pf, beta_from_pf_stable, clamp_probabilities, pf_from_beta
 
 
 def test_clamp_probabilities_allows_true_zero_one() -> None:
@@ -48,3 +49,29 @@ def test_round_trip_probabilities() -> None:
 
     assert np.allclose(upper[approx_mask], probs[approx_mask], rtol=1e-12, atol=0.0)
     assert np.allclose(lower[approx_mask], probs[approx_mask], rtol=1e-12, atol=0.0)
+
+
+def test_beta_from_pf_stable_preserves_boundary_infinities() -> None:
+    near_zero = np.nextafter(0.0, 1.0)
+    near_one = np.nextafter(1.0, 0.0)
+    probs = np.array([0.0, near_zero, 0.5, near_one, 1.0], dtype=float)
+
+    upper = beta_from_pf_stable(probs, tail="upper", prob_floor=1e-300)
+    assert np.isposinf(upper[0])
+    assert np.isfinite(upper[1])
+    assert np.isfinite(upper[2])
+    assert np.isfinite(upper[3])
+    assert np.isneginf(upper[4])
+
+    lower = beta_from_pf_stable(probs, tail="lower", prob_floor=1e-300)
+    assert np.isneginf(lower[0])
+    assert np.isfinite(lower[1])
+    assert np.isfinite(lower[2])
+    assert np.isfinite(lower[3])
+    assert np.isposinf(lower[4])
+
+
+def test_beta_from_pf_stable_validates_prob_floor() -> None:
+    probs = np.array([0.2, 0.8], dtype=float)
+    with pytest.raises(ValueError):
+        beta_from_pf_stable(probs, prob_floor=0.0)

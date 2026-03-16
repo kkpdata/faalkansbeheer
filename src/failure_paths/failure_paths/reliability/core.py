@@ -7,10 +7,10 @@ import numpy as np
 import openturns as ot
 from scipy.optimize import minimize_scalar
 
-from ..common.prob import beta_from_pf, pf_from_beta
+from ..common.prob import beta_from_pf, beta_from_pf_stable, pf_from_beta
 from .config import IntegrationConfig
 from .curve_distributions import FragilityDerivedDistribution, HazardDerivedDistribution
-from .results import FailureSamples, IntegrationResult
+from .results import FailureSamples, IntegrationDiagnosticsTrace, IntegrationResult
 
 
 @dataclass
@@ -35,6 +35,7 @@ class _AdaptiveInterval:
     center_u2: float
     center_s: float
     center_u1: float
+    center_failure_cdf: float
     mass_est: float
     error_est: float
     refinable: bool
@@ -52,6 +53,14 @@ class _BoundsPassResult:
 
 
 class ReliabilityIntegrator:
+    """Adaptive 1D reliability integrator for independent resistance and solicitation.
+
+    Parameters
+    ----------
+    config : IntegrationConfig
+        Integration settings, tolerance controls, and model input sources.
+    """
+
     def __init__(self, config: IntegrationConfig) -> None:
         self.config = config
         self._using_curve_distributions = False
@@ -67,23 +76,75 @@ class ReliabilityIntegrator:
 
     @property
     def r_distribution(self) -> ot.Distribution:
+        """Return the active resistance distribution.
+
+        Returns
+        -------
+        ot.Distribution
+            Computed output value.
+        """
         return self._r_distribution
 
     @property
     def s_distribution(self) -> ot.Distribution:
+        """Return the active solicitation distribution.
+
+        Returns
+        -------
+        ot.Distribution
+            Computed output value.
+        """
         return self._s_distribution
 
     @property
     def std_normal(self) -> ot.Normal:
+        """Return the standard normal distribution helper.
+
+        Returns
+        -------
+        ot.Normal
+            Computed output value.
+        """
         return self.config.std_normal
 
     def standard_normal_cdf(self, x: np.ndarray | float) -> np.ndarray | float:
+        """Evaluate the standard normal cumulative distribution function.
+
+        Parameters
+        ----------
+        x : np.ndarray | float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray | float
+            Computed output value.
+        """
         values = pf_from_beta(x, tail="lower")
         if np.isscalar(x):
             return float(values)
         return values
 
     def evaluate_limit_state(self, u1: np.ndarray, u2: np.ndarray) -> np.ndarray:
+        """Evaluate the transformed limit-state function g = R - S.
+
+        Parameters
+        ----------
+        u1 : np.ndarray
+            Input value.
+        u2 : np.ndarray
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+
+        Raises
+        ------
+        ValueError
+            If ``u1`` and ``u2`` do not share the same shape.
+        """
         u1_arr = np.asarray(u1)
         u2_arr = np.asarray(u2)
         if u1_arr.shape != u2_arr.shape:
@@ -100,6 +161,24 @@ class ReliabilityIntegrator:
         u_values_cdf: np.ndarray | None = None,
         u_values_survival: np.ndarray | None = None,
     ) -> np.ndarray:
+        """Map U-space values to quantiles of a target distribution.
+
+        Parameters
+        ----------
+        u_values : np.ndarray
+            Input value.
+        dist : ot.Distribution
+            Input value.
+        u_values_cdf : np.ndarray | None
+            Input value.
+        u_values_survival : np.ndarray | None
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         arr = np.asarray(u_values)
         need_cdf = u_values_cdf is None
         need_survival = u_values_survival is None
@@ -138,6 +217,22 @@ class ReliabilityIntegrator:
         compute_cdf: bool = True,
         compute_survival: bool = True,
     ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Compute normal CDF and/or survival probabilities for U-values.
+
+        Parameters
+        ----------
+        u_values : np.ndarray
+            Input value.
+        compute_cdf : bool
+            Input value.
+        compute_survival : bool
+            Input value.
+
+        Returns
+        -------
+        tuple[np.ndarray | None, np.ndarray | None]
+            Computed output value.
+        """
         arr = np.asarray(u_values)
         cdf = None
         survival = None
@@ -156,6 +251,22 @@ class ReliabilityIntegrator:
         edges_cdf: np.ndarray | None = None,
         edges_survival: np.ndarray | None = None,
     ) -> np.ndarray:
+        """Compute probability masses for adjacent U-intervals.
+
+        Parameters
+        ----------
+        edges : np.ndarray
+            Input value.
+        edges_cdf : np.ndarray | None
+            Input value.
+        edges_survival : np.ndarray | None
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         arr = np.asarray(edges)
         need_cdf = edges_cdf is None
         need_survival = edges_survival is None
@@ -199,6 +310,20 @@ class ReliabilityIntegrator:
         dist: ot.Distribution,
         levels: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluate CDF and survival values of a distribution at levels.
+
+        Parameters
+        ----------
+        dist : ot.Distribution
+            Input value.
+        levels : np.ndarray
+            Input value.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Computed output value.
+        """
         arr = np.asarray(levels, dtype=float).reshape(-1)
         cdf = np.array(dist.computeCDF(arr[:, np.newaxis])).reshape(-1)
         survival = np.array(dist.computeSurvivalFunction(arr[:, np.newaxis])).reshape(-1)
@@ -206,12 +331,49 @@ class ReliabilityIntegrator:
         survival = np.clip(survival, 0.0, 1.0)
         return cdf.reshape(np.shape(levels)), survival.reshape(np.shape(levels))
 
-    def run(self) -> IntegrationResult:
-        samples = self.integrate_failure_samples()
+    def run(
+        self,
+        *,
+        collect_diagnostics_trace: bool | None = None,
+    ) -> IntegrationResult:
+        """Run integration and return the post-processed reliability result.
+
+        Parameters
+        ----------
+        collect_diagnostics_trace : bool | None
+            Keyword-only input value.
+
+        Returns
+        -------
+        IntegrationResult
+            Computed output value.
+        """
+        samples = self.integrate_failure_samples(collect_diagnostics_trace=collect_diagnostics_trace)
         return self._postprocess_failure_samples(samples)
 
-    def integrate_failure_samples(self) -> FailureSamples:
-        samples = self._integrate_distributions()
+    def integrate_failure_samples(
+        self,
+        *,
+        collect_diagnostics_trace: bool | None = None,
+    ) -> FailureSamples:
+        """Integrate weighted failure samples in U-space.
+
+        Parameters
+        ----------
+        collect_diagnostics_trace : bool | None
+            Keyword-only input value.
+
+        Returns
+        -------
+        FailureSamples
+            Computed output value.
+        """
+        capture_trace = (
+            self.config.collect_diagnostics_trace
+            if collect_diagnostics_trace is None
+            else bool(collect_diagnostics_trace)
+        )
+        samples = self._integrate_distributions(capture_trace=capture_trace)
         if samples.points.size > 0:
             u_s = samples.points[:, 1]
             cdf_vals, surv_vals = self._normal_probabilities(u_s, compute_cdf=True, compute_survival=True)
@@ -228,6 +390,18 @@ class ReliabilityIntegrator:
         return samples
 
     def _initial_u_bounds(self) -> tuple[float, float]:
+        """Determine initial U-space bounds for integration.
+
+        Returns
+        -------
+        tuple[float, float]
+            Computed output value.
+
+        Raises
+        ------
+        RuntimeError
+            If automatic bounds cannot be computed from ``u_tail_probability``.
+        """
         if self.config.u_manual_bounds is not None:
             lower, upper = self.config.u_manual_bounds
             return float(lower), float(upper)
@@ -240,6 +414,18 @@ class ReliabilityIntegrator:
         return -bound, bound
 
     def _widen_bounds(self, bounds: tuple[float, float]) -> tuple[float, float] | None:
+        """Expand U-space bounds for an additional truncation pass.
+
+        Parameters
+        ----------
+        bounds : tuple[float, float]
+            Input value.
+
+        Returns
+        -------
+        tuple[float, float] | None
+            Computed output value.
+        """
         lower, upper = float(bounds[0]), float(bounds[1])
         widened_lower = max(-self._AUTO_BOUNDS_MAX_ABS, lower - self._AUTO_BOUNDS_WIDEN_STEP)
         widened_upper = min(self._AUTO_BOUNDS_MAX_ABS, upper + self._AUTO_BOUNDS_WIDEN_STEP)
@@ -248,13 +434,49 @@ class ReliabilityIntegrator:
         return widened_lower, widened_upper
 
     def _truncation_pf_error_bound(self, grid: _IntegrationAxisGridData) -> float:
+        """Estimate Pf error caused by truncation outside current bounds.
+
+        Parameters
+        ----------
+        grid : _IntegrationAxisGridData
+            Input value.
+
+        Returns
+        -------
+        float
+            Computed output value.
+        """
         return max(0.0, float(grid.target_mass - grid.captured_mass))
 
     def _relative_pf_error_target(self, pf_est: float) -> float:
+        """Compute the relative adaptive Pf error target.
+
+        Parameters
+        ----------
+        pf_est : float
+            Input value.
+
+        Returns
+        -------
+        float
+            Computed output value.
+        """
         denom = max(float(pf_est), self.config.adaptive_pf_floor)
         return (float(np.exp(self.config.adaptive_logpf_tol)) - 1.0) * denom
 
     def _combined_pf_error_target(self, pf_est: float) -> float:
+        """Compute the effective Pf target using relative and optional absolute tolerances.
+
+        Parameters
+        ----------
+        pf_est : float
+            Input value.
+
+        Returns
+        -------
+        float
+            Computed output value.
+        """
         rel_target = self._relative_pf_error_target(pf_est)
         abs_tol = self.config.adaptive_abs_pf_tol
         if abs_tol is None:
@@ -271,6 +493,28 @@ class ReliabilityIntegrator:
         relative_target_pf_error_bound: float,
         converged: bool,
     ) -> str:
+        """Classify the convergence status of the current pass.
+
+        Parameters
+        ----------
+        total_pf_error_bound : float
+            Keyword-only input value.
+        truncation_pf_error_bound : float
+            Keyword-only input value.
+        adaptive_pf_error_bound : float
+            Keyword-only input value.
+        target_pf_error_bound : float
+            Keyword-only input value.
+        relative_target_pf_error_bound : float
+            Keyword-only input value.
+        converged : bool
+            Keyword-only input value.
+
+        Returns
+        -------
+        str
+            Computed output value.
+        """
         if converged:
             abs_tol = self.config.adaptive_abs_pf_tol
             if (
@@ -292,6 +536,18 @@ class ReliabilityIntegrator:
 
     @staticmethod
     def _merge_level_candidates(*level_groups: np.ndarray | list[float] | None) -> np.ndarray:
+        """Merge and sort candidate physical levels from multiple sources.
+
+        Parameters
+        ----------
+        *level_groups : np.ndarray | list[float] | None
+            Additional positional inputs.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         merged: list[np.ndarray] = []
         for group in level_groups:
             if group is None:
@@ -309,6 +565,20 @@ class ReliabilityIntegrator:
 
     @staticmethod
     def _deduplicate_with_min_spacing(values: np.ndarray | list[float], min_spacing: float) -> np.ndarray:
+        """Deduplicate sorted values while enforcing a minimum spacing.
+
+        Parameters
+        ----------
+        values : np.ndarray | list[float]
+            Input value.
+        min_spacing : float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         arr = np.asarray(values, dtype=float).reshape(-1)
         if arr.size == 0:
             return np.array([], dtype=float)
@@ -334,6 +604,22 @@ class ReliabilityIntegrator:
         x_min: float,
         x_max: float,
     ) -> np.ndarray:
+        """Clip candidate levels to a finite physical range.
+
+        Parameters
+        ----------
+        levels : np.ndarray | list[float] | None
+            Input value.
+        x_min : float
+            Input value.
+        x_max : float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         if levels is None:
             return np.array([], dtype=float)
         arr = np.asarray(levels, dtype=float).reshape(-1)
@@ -348,6 +634,27 @@ class ReliabilityIntegrator:
         return self._deduplicate_with_min_spacing(arr, self._CURVE_LEVEL_MIN_SPACING_X)
 
     def _distribution_value_bounds(self, dist: ot.Distribution, u_min: float, u_max: float) -> tuple[float, float]:
+        """Map U-bounds to finite physical bounds of a distribution.
+
+        Parameters
+        ----------
+        dist : ot.Distribution
+            Input value.
+        u_min : float
+            Input value.
+        u_max : float
+            Input value.
+
+        Returns
+        -------
+        tuple[float, float]
+            Computed output value.
+
+        Raises
+        ------
+        RuntimeError
+            If no finite physical bounds can be computed.
+        """
         u_edges = np.array([u_min, u_max], dtype=float)
         cdf_edges, surv_edges = self._normal_probabilities(u_edges)
         x_edges = self._map_u_to_distribution(
@@ -363,6 +670,22 @@ class ReliabilityIntegrator:
         return float(np.min(finite)), float(np.max(finite))
 
     def _distribution_step_levels(self, dist: ot.Distribution, x_min: float, x_max: float) -> np.ndarray:
+        """Extract discrete support or singularity levels for mandatory edge injection.
+
+        Parameters
+        ----------
+        dist : ot.Distribution
+            Input value.
+        x_min : float
+            Input value.
+        x_max : float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         levels: list[float] = []
 
         try:
@@ -414,6 +737,27 @@ class ReliabilityIntegrator:
         u_min: float | None = None,
         u_max: float | None = None,
     ) -> _IntegrationAxisGridData:
+        """Build the 1D U-space grid and interval masses for solicitation.
+
+        Parameters
+        ----------
+        u_min : float | None
+            Input value.
+        u_max : float | None
+            Input value.
+
+        Returns
+        -------
+        _IntegrationAxisGridData
+            Computed output value.
+
+        Raises
+        ------
+        ValueError
+            If invalid U-bounds are provided.
+        RuntimeError
+            If constructed interval probabilities are invalid.
+        """
         if u_min is None or u_max is None:
             bounds = self._initial_u_bounds()
             if u_min is None:
@@ -491,6 +835,24 @@ class ReliabilityIntegrator:
         u_min: float,
         u_max: float,
     ) -> np.ndarray:
+        """Assemble final U-space edges from mandatory and optional regular points.
+
+        Parameters
+        ----------
+        dist : ot.Distribution
+            Input value.
+        curve_levels : np.ndarray | None
+            Input value.
+        u_min : float
+            Input value.
+        u_max : float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         cfg = self.config
         mandatory = np.array([u_min, u_max], dtype=float)
         mapped_knots = self._map_curve_levels_to_u_edges(dist=dist, levels=curve_levels, u_min=u_min, u_max=u_max)
@@ -531,6 +893,24 @@ class ReliabilityIntegrator:
         u_min: float,
         u_max: float,
     ) -> np.ndarray:
+        """Map physical curve/discrete levels into valid interior U-edges.
+
+        Parameters
+        ----------
+        dist : ot.Distribution
+            Input value.
+        levels : np.ndarray | None
+            Input value.
+        u_min : float
+            Input value.
+        u_max : float
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         if levels is None:
             return np.array([], dtype=float)
 
@@ -580,16 +960,53 @@ class ReliabilityIntegrator:
         u1_flat = np.empty_like(flat_cdf, dtype=float)
         lower_mask = flat_cdf <= 0.5
         if np.any(lower_mask):
-            u1_flat[lower_mask] = beta_from_pf(flat_cdf[lower_mask], tail="lower")
+            u1_flat[lower_mask] = beta_from_pf_stable(
+                flat_cdf[lower_mask],
+                tail="lower",
+                prob_floor=self.config.adaptive_pf_floor,
+            )
         if np.any(~lower_mask):
-            u1_flat[~lower_mask] = beta_from_pf(flat_survival[~lower_mask], tail="upper")
+            u1_flat[~lower_mask] = beta_from_pf_stable(
+                flat_survival[~lower_mask],
+                tail="upper",
+                prob_floor=self.config.adaptive_pf_floor,
+            )
         return fail_cdf, u1_flat.reshape(arr.shape)
 
     def _failure_cdf_at_s(self, s_values: np.ndarray) -> np.ndarray:
+        """Evaluate failure CDF values at physical solicitation levels.
+
+        Parameters
+        ----------
+        s_values : np.ndarray
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+        """
         fail_cdf, _ = self._failure_cdf_and_u_for_r_equals_s(s_values, include_u1_equivalent=False)
         return fail_cdf
 
     def _u_for_r_equals_s(self, s_values: np.ndarray) -> np.ndarray:
+        """Map physical equality levels R=S to equivalent U1 coordinates.
+
+        Parameters
+        ----------
+        s_values : np.ndarray
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+
+        Raises
+        ------
+        RuntimeError
+            If equivalent U1 values are unexpectedly unavailable.
+        """
         _, u1_vals = self._failure_cdf_and_u_for_r_equals_s(s_values, include_u1_equivalent=True)
         if u1_vals is None:
             raise RuntimeError("Internal error: expected u1 equivalent values.")
@@ -622,6 +1039,27 @@ class ReliabilityIntegrator:
         u_right: np.ndarray,
         split_factor: int,
     ) -> np.ndarray:
+        """Estimate interval masses using probe sub-interval integration.
+
+        Parameters
+        ----------
+        u_left : np.ndarray
+            Input value.
+        u_right : np.ndarray
+            Input value.
+        split_factor : int
+            Input value.
+
+        Returns
+        -------
+        np.ndarray
+            Computed output value.
+
+        Raises
+        ------
+        ValueError
+            If ``u_left`` and ``u_right`` do not have the same size.
+        """
         left = np.asarray(u_left, dtype=float).reshape(-1)
         right = np.asarray(u_right, dtype=float).reshape(-1)
         if left.size != right.size:
@@ -643,6 +1081,22 @@ class ReliabilityIntegrator:
         u_right: float,
         split_factor: int,
     ) -> float:
+        """Estimate mass for one interval using probe refinement.
+
+        Parameters
+        ----------
+        u_left : float
+            Input value.
+        u_right : float
+            Input value.
+        split_factor : int
+            Input value.
+
+        Returns
+        -------
+        float
+            Computed output value.
+        """
         masses = self._adaptive_probe_masses(
             np.array([u_left], dtype=float),
             np.array([u_right], dtype=float),
@@ -659,6 +1113,31 @@ class ReliabilityIntegrator:
         prob_weight: np.ndarray,
         depth: int,
     ) -> list[_AdaptiveInterval]:
+        """Construct adaptive interval descriptors for a batch of intervals.
+
+        Parameters
+        ----------
+        u_left : np.ndarray
+            Input value.
+        u_right : np.ndarray
+            Input value.
+        prob_weight : np.ndarray
+            Input value.
+        depth : int
+            Input value.
+
+        Returns
+        -------
+        list[_AdaptiveInterval]
+            Computed output value.
+
+        Raises
+        ------
+        ValueError
+            If input arrays do not have identical lengths.
+        RuntimeError
+            If internal U1-equivalent values are unexpectedly unavailable.
+        """
         left = np.asarray(u_left, dtype=float).reshape(-1)
         right = np.asarray(u_right, dtype=float).reshape(-1)
         weight = np.asarray(prob_weight, dtype=float).reshape(-1)
@@ -679,6 +1158,7 @@ class ReliabilityIntegrator:
 
         intervals: list[_AdaptiveInterval] = []
         center_s_flat = np.asarray(center_s, dtype=float).reshape(-1)
+        center_f_flat = np.asarray(center_f, dtype=float).reshape(-1)
         center_u1_flat = np.asarray(center_u1, dtype=float).reshape(-1)
         for i in range(left.size):
             interval_error = float(error_est[i])
@@ -691,6 +1171,7 @@ class ReliabilityIntegrator:
                     center_u2=float(centers[i]),
                     center_s=float(center_s_flat[i]),
                     center_u1=float(center_u1_flat[i]),
+                    center_failure_cdf=float(center_f_flat[i]),
                     mass_est=float(probe_mass[i]),
                     error_est=interval_error,
                     refinable=can_refine and interval_error > 0.0,
@@ -705,6 +1186,29 @@ class ReliabilityIntegrator:
         prob_weight: float,
         depth: int,
     ) -> _AdaptiveInterval:
+        """Construct one adaptive interval descriptor.
+
+        Parameters
+        ----------
+        u_left : float
+            Input value.
+        u_right : float
+            Input value.
+        prob_weight : float
+            Input value.
+        depth : int
+            Input value.
+
+        Returns
+        -------
+        _AdaptiveInterval
+            Computed output value.
+
+        Raises
+        ------
+        RuntimeError
+            If interval construction does not yield exactly one interval.
+        """
         intervals = self._build_adaptive_intervals_batch(
             np.array([u_left], dtype=float),
             np.array([u_right], dtype=float),
@@ -716,6 +1220,18 @@ class ReliabilityIntegrator:
         return intervals[0]
 
     def _split_adaptive_interval(self, interval: _AdaptiveInterval) -> list[_AdaptiveInterval]:
+        """Split one interval into child intervals with positive mass.
+
+        Parameters
+        ----------
+        interval : _AdaptiveInterval
+            Input value.
+
+        Returns
+        -------
+        list[_AdaptiveInterval]
+            Computed output value.
+        """
         split_factor = self.config.adaptive_split_factor
         u_edges = np.linspace(interval.u_left, interval.u_right, split_factor + 1)
         cdf_edges, survival_edges = self._normal_probabilities(u_edges, compute_cdf=True, compute_survival=True)
@@ -734,6 +1250,18 @@ class ReliabilityIntegrator:
         self,
         grid: _IntegrationAxisGridData,
     ) -> tuple[list[_AdaptiveInterval], bool, int, float, int, int]:
+        """Refine intervals until tolerance criteria or limits are reached.
+
+        Parameters
+        ----------
+        grid : _IntegrationAxisGridData
+            Input value.
+
+        Returns
+        -------
+        tuple[list[_AdaptiveInterval], bool, int, float, int, int]
+            Computed output value.
+        """
         cfg = self.config
         active: dict[int, _AdaptiveInterval] = {}
         heap: list[tuple[float, int]] = []
@@ -804,7 +1332,95 @@ class ReliabilityIntegrator:
 
         return list(active.values()), converged, iterations, remaining_error, coarse_fail_intervals, mixed_intervals
 
-    def _integrate_distributions_adaptive(self, grid: _IntegrationAxisGridData) -> FailureSamples:
+    @staticmethod
+    def _diagnostics_trace_from_intervals(intervals: list[_AdaptiveInterval]) -> IntegrationDiagnosticsTrace:
+        """Build a typed diagnostics trace from final adaptive leaf intervals."""
+        if not intervals:
+            empty_float = np.array([], dtype=float)
+            return IntegrationDiagnosticsTrace(
+                u_left=empty_float,
+                u_right=empty_float,
+                u_center=empty_float,
+                depth=np.array([], dtype=int),
+                prob_weight=empty_float,
+                failure_cdf_center=empty_float,
+                local_pf_contribution=empty_float,
+                error_estimate=empty_float,
+                center_u1=empty_float,
+            )
+
+        return IntegrationDiagnosticsTrace(
+            u_left=np.array([interval.u_left for interval in intervals], dtype=float),
+            u_right=np.array([interval.u_right for interval in intervals], dtype=float),
+            u_center=np.array([interval.center_u2 for interval in intervals], dtype=float),
+            depth=np.array([interval.depth for interval in intervals], dtype=int),
+            prob_weight=np.array([interval.prob_weight for interval in intervals], dtype=float),
+            failure_cdf_center=np.array([interval.center_failure_cdf for interval in intervals], dtype=float),
+            local_pf_contribution=np.array([interval.mass_est for interval in intervals], dtype=float),
+            error_estimate=np.array([interval.error_est for interval in intervals], dtype=float),
+            center_u1=np.array([interval.center_u1 for interval in intervals], dtype=float),
+        )
+
+    @staticmethod
+    def _validate_integration_trace(trace: IntegrationDiagnosticsTrace, pf_total: float) -> None:
+        """Validate alignment and mass-conservation invariants for diagnostics trace."""
+        n = trace.u_center.size
+        if not (
+            trace.u_left.size == n
+            and trace.u_right.size == n
+            and trace.depth.size == n
+            and trace.prob_weight.size == n
+            and trace.failure_cdf_center.size == n
+            and trace.local_pf_contribution.size == n
+            and trace.error_estimate.size == n
+            and trace.center_u1.size == n
+        ):
+            raise RuntimeError("Diagnostics trace arrays are misaligned.")
+
+        finite_blocks = (
+            trace.u_left,
+            trace.u_right,
+            trace.u_center,
+            trace.prob_weight,
+            trace.failure_cdf_center,
+            trace.local_pf_contribution,
+            trace.error_estimate,
+        )
+        if any(np.any(~np.isfinite(block)) for block in finite_blocks):
+            raise RuntimeError("Diagnostics trace contains non-finite values.")
+        # ``center_u1`` can legitimately be +/-inf in extreme tails when
+        # failure CDF collapses to 0 or 1. Preserve those values for diagnostics.
+        if np.any(np.isnan(trace.center_u1)):
+            raise RuntimeError("Diagnostics trace contains NaN center_u1 values.")
+        if np.any(trace.local_pf_contribution < 0.0) or np.any(trace.error_estimate < 0.0):
+            raise RuntimeError("Diagnostics trace contains negative mass or error entries.")
+        if np.any((trace.failure_cdf_center < 0.0) | (trace.failure_cdf_center > 1.0)):
+            raise RuntimeError("Diagnostics trace failure CDF values are outside [0, 1].")
+
+        trace_mass = float(np.sum(trace.local_pf_contribution))
+        if not np.isclose(trace_mass, pf_total, rtol=1e-12, atol=1e-15):
+            raise RuntimeError("Diagnostics trace mass does not match integrated Pf.")
+
+    def _integrate_distributions_adaptive(
+        self,
+        grid: _IntegrationAxisGridData,
+        *,
+        capture_trace: bool,
+    ) -> FailureSamples:
+        """Integrate Pf contributions over adaptive leaf intervals.
+
+        Parameters
+        ----------
+        grid : _IntegrationAxisGridData
+            Input value.
+        capture_trace : bool
+            Keyword-only input value.
+
+        Returns
+        -------
+        FailureSamples
+            Computed output value.
+        """
         cfg = self.config
         intervals, converged, iterations, remaining_error, coarse_fail_intervals, mixed_intervals = (
             self._adaptive_leaf_intervals(grid)
@@ -827,6 +1443,9 @@ class ReliabilityIntegrator:
             sum(1 for interval in intervals if interval.depth >= cfg.adaptive_max_depth and interval.error_est > 0.0)
         )
         refined_fail_intervals = int(len(positive))
+        integration_trace = self._diagnostics_trace_from_intervals(intervals) if capture_trace else None
+        if integration_trace is not None:
+            self._validate_integration_trace(integration_trace, final_pf)
 
         return FailureSamples(
             weights=weights,
@@ -840,16 +1459,35 @@ class ReliabilityIntegrator:
             adaptive_estimated_logpf_error=estimated_logpf_error,
             adaptive_remaining_pf_error=float(remaining_error),
             adaptive_max_depth_reached_cells=max_depth_reached_intervals,
+            integration_trace=integration_trace,
         )
 
     def _run_bounds_pass(
         self,
         bounds: tuple[float, float],
         previous_pass_pf: float | None,
+        *,
+        capture_trace: bool,
     ) -> _BoundsPassResult:
+        """Execute one integration pass for fixed U-bounds.
+
+        Parameters
+        ----------
+        bounds : tuple[float, float]
+            Input value.
+        previous_pass_pf : float | None
+            Input value.
+        capture_trace : bool
+            Keyword-only input value.
+
+        Returns
+        -------
+        _BoundsPassResult
+            Computed output value.
+        """
         cfg = self.config
         grid = self._compute_distribution_grid(u_min=bounds[0], u_max=bounds[1])
-        samples = self._integrate_distributions_adaptive(grid)
+        samples = self._integrate_distributions_adaptive(grid, capture_trace=capture_trace)
 
         pf_est = float(samples.weights.sum()) if samples.weights.size > 0 else 0.0
         truncation_pf_error_bound = self._truncation_pf_error_bound(grid)
@@ -891,7 +1529,28 @@ class ReliabilityIntegrator:
             u_bounds_used=(float(grid.u_min), float(grid.u_max)),
         )
 
-    def _integrate_distributions(self) -> FailureSamples:
+    def _integrate_distributions(
+        self,
+        *,
+        capture_trace: bool,
+    ) -> FailureSamples:
+        """Run one or more bounds passes and return final failure samples.
+
+        Parameters
+        ----------
+        capture_trace : bool
+            Keyword-only input value.
+
+        Returns
+        -------
+        FailureSamples
+            Computed output value.
+
+        Raises
+        ------
+        RuntimeError
+            If integration exits without producing a bounds-pass result.
+        """
         cfg = self.config
         auto_bounds = cfg.u_manual_bounds is None
         bounds = self._initial_u_bounds()
@@ -900,7 +1559,7 @@ class ReliabilityIntegrator:
         final_reason: str | None = None
 
         while True:
-            pass_result = self._run_bounds_pass(bounds, previous_pass_pf)
+            pass_result = self._run_bounds_pass(bounds, previous_pass_pf, capture_trace=capture_trace)
             latest_pass = pass_result
             pf_est = float(pass_result.samples.weights.sum()) if pass_result.samples.weights.size > 0 else 0.0
             target_abs = pass_result.target_pf_error_bound
@@ -932,6 +1591,13 @@ class ReliabilityIntegrator:
         return latest_pass.samples
 
     def _initialize_distributions(self) -> None:
+        """Initialize resistance and solicitation distributions from configuration.
+
+        Raises
+        ------
+        ValueError
+            If required distribution sources are missing.
+        """
         cfg = self.config
         self._using_curve_distributions = False
         if cfg.fragility_curve is not None:
@@ -974,9 +1640,17 @@ class ReliabilityIntegrator:
         u2_vals = np.empty_like(s_cdf, dtype=float)
         lower_mask = s_cdf <= 0.5
         if np.any(lower_mask):
-            u2_vals[lower_mask] = beta_from_pf(s_cdf[lower_mask], tail="lower")
+            u2_vals[lower_mask] = beta_from_pf_stable(
+                s_cdf[lower_mask],
+                tail="lower",
+                prob_floor=self.config.adaptive_pf_floor,
+            )
         if np.any(~lower_mask):
-            u2_vals[~lower_mask] = beta_from_pf(s_survival[~lower_mask], tail="upper")
+            u2_vals[~lower_mask] = beta_from_pf_stable(
+                s_survival[~lower_mask],
+                tail="upper",
+                prob_floor=self.config.adaptive_pf_floor,
+            )
         return u2_vals.reshape(u_values.shape)
 
     def _solve_design_point(
@@ -1004,6 +1678,18 @@ class ReliabilityIntegrator:
         invalid_penalty = 1.0e50
 
         def evaluate_feasible(u1: float) -> tuple[float, float] | None:
+            """Evaluate feasibility and objective value for a candidate design-point abscissa.
+
+            Parameters
+            ----------
+            u1 : float
+                Input value.
+
+            Returns
+            -------
+            tuple[float, float] | None
+                Computed output value.
+            """
             u2 = float(self._limit_state_curve(np.array([u1], dtype=float))[0])
             if not np.isfinite(u2):
                 return None
@@ -1016,6 +1702,18 @@ class ReliabilityIntegrator:
 
         # Step 1: Objective on the implicit g=0 curve, J(u1)=u1^2+u2(u1)^2.
         def objective(u1: float) -> float:
+            """Return the penalized scalar objective used by bounded minimization.
+
+            Parameters
+            ----------
+            u1 : float
+                Input value.
+
+            Returns
+            -------
+            float
+                Computed output value.
+            """
             evaluated = evaluate_feasible(float(u1))
             if evaluated is None:
                 return invalid_penalty
@@ -1087,6 +1785,13 @@ class ReliabilityIntegrator:
             deduped_intervals.append((float(left), float(right)))
 
         def update_best(u1: float) -> None:
+            """Update the current best feasible design-point candidate.
+
+            Parameters
+            ----------
+            u1 : float
+                Input value.
+            """
             nonlocal best_obj, best_u1, best_u2
             evaluated = evaluate_feasible(float(u1))
             if evaluated is None:
@@ -1120,6 +1825,18 @@ class ReliabilityIntegrator:
         return beta_star, alpha
 
     def _postprocess_failure_samples(self, samples: FailureSamples) -> IntegrationResult:
+        """Convert failure samples into the public integration result.
+
+        Parameters
+        ----------
+        samples : FailureSamples
+            Input value.
+
+        Returns
+        -------
+        IntegrationResult
+            Computed output value.
+        """
         w_fail = samples.weights
         if w_fail.size == 0:
             pf = 0.0

@@ -6,6 +6,41 @@ import numpy as np
 
 
 @dataclass
+class IntegrationDiagnosticsTrace:
+    """Interval-level diagnostics trace produced by the 1D adaptive integrator."""
+
+    u_left: np.ndarray
+    u_right: np.ndarray
+    u_center: np.ndarray
+    depth: np.ndarray
+    prob_weight: np.ndarray
+    failure_cdf_center: np.ndarray
+    local_pf_contribution: np.ndarray
+    error_estimate: np.ndarray
+    center_u1: np.ndarray
+
+    def to_dict(self) -> dict[str, list[float] | list[int]]:
+        """Serialize diagnostics trace arrays to plain Python lists.
+
+        Returns
+        -------
+        dict[str, list[float] | list[int]]
+            JSON-serializable mapping of trace arrays.
+        """
+        return {
+            "u_left": self.u_left.tolist(),
+            "u_right": self.u_right.tolist(),
+            "u_center": self.u_center.tolist(),
+            "depth": self.depth.tolist(),
+            "prob_weight": self.prob_weight.tolist(),
+            "failure_cdf_center": self.failure_cdf_center.tolist(),
+            "local_pf_contribution": self.local_pf_contribution.tolist(),
+            "error_estimate": self.error_estimate.tolist(),
+            "center_u1": self.center_u1.tolist(),
+        }
+
+
+@dataclass
 class FailureSamples:
     """Weighted failure points identified by the integration scheme."""
 
@@ -26,6 +61,7 @@ class FailureSamples:
     estimated_logpf_error: float | None = None
     truncation_pf_error_bound: float | None = None
     u_bounds_used: tuple[float, float] | None = None
+    integration_trace: IntegrationDiagnosticsTrace | None = None
 
     def __repr__(self) -> str:
         """Summarize weights and diagnostics."""
@@ -42,6 +78,9 @@ class FailureSamples:
             global_bits = f", converged={self.converged}, global_err={global_err}"
             if self.convergence_reason is not None:
                 global_bits += f", reason={self.convergence_reason}"
+        trace_bits = ""
+        if self.integration_trace is not None:
+            trace_bits = f", trace_intervals={self.integration_trace.u_center.size}"
         return (
             "FailureSamples("
             f"count={self.weights.size}, "
@@ -50,13 +89,14 @@ class FailureSamples:
             f"mixed_cells={self.mixed_cells}"
             f"{adaptive_bits}"
             f"{global_bits}"
+            f"{trace_bits}"
             ")"
         )
 
 
 @dataclass
 class IntegrationResult:
-    """Summary of reliability metrics produced by the grid integrator."""
+    """Summary of reliability metrics produced by the 1D adaptive integrator."""
 
     pf: float
     beta_star: float
@@ -96,18 +136,21 @@ class IntegrationResult:
             ),
         }
 
-    def to_dict(self, include_samples: bool = False) -> dict[str, object]:
+    def to_dict(self, include_samples: bool = False, include_trace: bool = False) -> dict[str, object]:
         """Serialize the full integration result.
 
         Parameters
         ----------
         include_samples : bool
             Whether to include the failure samples and weights.
+        include_trace : bool
+            Whether to include interval-level integration diagnostics trace.
 
         Returns
         -------
         dict[str, object]
-            JSON-serializable structure containing the result summary and optional samples.
+            JSON-serializable structure containing the result summary and optional
+            samples and trace data.
         """
         data: dict[str, object] = {
             "pf": float(self.pf),
@@ -149,6 +192,8 @@ class IntegrationResult:
                 data["failure_hazards"] = self.failure_samples.hazard_levels.tolist()
             if self.failure_samples.solicitation_levels is not None:
                 data["failure_water_levels"] = self.failure_samples.solicitation_levels.tolist()
+        if include_trace and self.failure_samples.integration_trace is not None:
+            data["integration_trace"] = self.failure_samples.integration_trace.to_dict()
         return data
 
     def failure_water_levels(self) -> np.ndarray | None:

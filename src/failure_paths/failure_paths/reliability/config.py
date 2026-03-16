@@ -73,6 +73,10 @@ class IntegrationConfig(BaseModel):
         gt=0.0,
         description="Numerical floor used when normalizing tiny failure probabilities in adaptive mode.",
     )
+    collect_diagnostics_trace: bool = Field(
+        False,
+        description=("When true, collect interval-level 1D adaptive diagnostics for plotting and post-run inspection."),
+    )
 
     std_normal: ot.Normal = Field(default_factory=ot.Normal)
     hazard_curve: HazardCurve | None = Field(

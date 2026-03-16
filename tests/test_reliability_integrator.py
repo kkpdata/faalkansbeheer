@@ -1,6 +1,5 @@
 import math
 import warnings
-from pathlib import Path
 
 import matplotlib
 
@@ -18,7 +17,7 @@ from failure_paths.reliability import (
     IntegrationResult,
     ReliabilityIntegrator,
 )
-from failure_paths.reliability.plotting import plot_integration_grid, prepare_failure_histogram
+from failure_paths.reliability.plotting import prepare_failure_histogram
 from pydantic import ValidationError
 
 ANALYTIC_BETA_REL_TOL = 1e-6
@@ -845,28 +844,6 @@ def test_hazard_fragility_from_normals_matches_distribution_result() -> None:
         abs_tol=GENERIC_BETA_ABS_FALLBACK_TOL,
     )
     assert abs(curve_result.beta_pf - analytic_beta) <= abs(dist_result.beta_pf - analytic_beta) + 1e-12
-
-
-def test_integration_grid_plot_smoke(tmp_path: Path) -> None:
-    config = _default_config(coarse_points=21)
-    integrator = ReliabilityIntegrator(config=config)
-    with pytest.raises(RuntimeError, match="deprecated"):
-        plot_integration_grid(integrator)
-
-
-def test_integration_grid_plot_with_hazard_curves(tmp_path: Path) -> None:
-    hazard = HazardCurve([0.0, 1.0, 2.0], [0.95, 0.4, 0.05])
-    fragility = FragilityCurve([0.0, 1.0, 2.0], [1.0, 0.0, -1.5])
-    config = IntegrationConfig(
-        r_distribution=None,
-        s_distribution=None,
-        hazard_curve=hazard,
-        fragility_curve=fragility,
-        coarse_points=21,
-    )
-    integrator = ReliabilityIntegrator(config=config)
-    with pytest.raises(RuntimeError, match="deprecated"):
-        plot_integration_grid(integrator, limit_points=65)
 
 
 def test_failure_histogram_conserves_probability() -> None:

@@ -10,7 +10,7 @@ from failure_paths.common.interp import LinearInterpolator
 from failure_paths.common.prob import beta_from_pf, pf_from_beta
 from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
 from failure_paths.reliability.curves import FragilityCurve, HazardCurve
-from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_grid
+from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
 
 from failure_paths import ExcelEventGraph
 
@@ -63,16 +63,13 @@ def integrate_and_plot(
         coarse_points=101,
     )
     integrator = ReliabilityIntegrator(config=config)
-    result = integrator.run()
+    result = integrator.run(collect_diagnostics_trace=True)
 
-    # visualize integration grid
-    fig, axs = plt.subplots(ncols=2, figsize=(12, 5), dpi=100)
-    try:
-        plot_integration_grid(integrator, ax=axs[0])
-    except RuntimeError as exc:
-        axs[0].set_axis_off()
-        axs[0].text(0.5, 0.5, str(exc), ha="center", va="center", wrap=True)
-        axs[0].set_title("Integration Grid Unavailable")
+    # visualize 1D integration diagnostics and histogram
+    fig, axs = plt.subplots(ncols=3, figsize=(18, 5), dpi=100)
+    diag_axes = np.array([axs[0], axs[1]], dtype=object)
+    hist_ax = axs[2]
+    plot_integration_diagnostics_1d(result, axes=diag_axes)
 
     # Keep the internal water-level resolution, but ensure the outer bins include all failure samples.
     hist_edges = np.asarray(water_levels, dtype=float).copy()
@@ -87,7 +84,7 @@ def integrate_and_plot(
 
     # visualize failure probability distribution over water levels
     _, _, hist_data = plot_failure_histogram(
-        result, hist_edges, ax=axs[1], conditional=False, solicitation_distribution=integrator.s_distribution
+        result, hist_edges, ax=hist_ax, conditional=False, solicitation_distribution=integrator.s_distribution
     )
     if scen_name == "combined":
         fig.savefig(fig_path / f"int_section_{scen_name}.png", bbox_inches="tight")

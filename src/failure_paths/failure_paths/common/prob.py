@@ -133,6 +133,63 @@ def beta_from_pf(
     return betas
 
 
+def beta_from_pf_stable(
+    pf: np.ndarray | float,
+    *,
+    tail: str = "upper",
+    prob_floor: float = 1e-300,
+    inf_substitute: float | None = None,
+) -> NDArray[np.float64]:
+    """
+    Convert probabilities to beta with stable interior clipping and exact 0/1 handling.
+
+    Parameters
+    ----------
+    pf : np.ndarray | float
+        Failure probabilities.
+    tail : str, optional
+        Tail convention passed to :func:`beta_from_pf`.
+    prob_floor : float, optional
+        Positive interior floor used to clip probabilities away from 0 and 1.
+        Exact boundary inputs (0 or 1) are still mapped to infinities.
+    inf_substitute : float | None, optional
+        If provided, replace ``+/-inf`` outputs with this magnitude.
+
+    Returns
+    -------
+    numpy.ndarray
+        Reliability indices with stable finite interior conversion.
+
+    Raises
+    ------
+    ValueError
+        If ``tail`` is invalid or ``prob_floor`` is not in ``(0, 0.5]``.
+    """
+    if tail not in {"upper", "lower"}:
+        raise ValueError("tail must be 'upper' or 'lower'.")
+    floor = float(prob_floor)
+    if not (0.0 < floor <= 0.5):
+        raise ValueError("prob_floor must be in (0, 0.5].")
+
+    probs = np.asarray(pf, dtype=float)
+    zero_mask = probs <= 0.0
+    one_mask = probs >= 1.0
+    clipped = np.clip(probs, floor, 1.0 - floor)
+    betas = beta_from_pf(clipped, tail=tail)
+
+    if np.any(zero_mask) or np.any(one_mask):
+        if tail == "upper":
+            betas = np.where(zero_mask, np.inf, betas)
+            betas = np.where(one_mask, -np.inf, betas)
+        else:
+            betas = np.where(zero_mask, -np.inf, betas)
+            betas = np.where(one_mask, np.inf, betas)
+
+    if inf_substitute is not None:
+        betas = np.nan_to_num(betas, nan=0.0, posinf=inf_substitute, neginf=-inf_substitute)
+    return np.asarray(betas, dtype=float)
+
+
 # Shared defaults for stable interpolation when true 0/1 probabilities appear
 # in fragility curves and would otherwise map to +/-inf betas.
 INTERPOLATION_PROB_EPSILON = 1e-300
