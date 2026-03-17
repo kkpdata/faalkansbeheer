@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
         "--dir-traject",
         type=Path,
         default=Path(
+            # "C:/Users/SAKA/Downloads/DT16-1_TMP"
             "C:/Users/SAKA/Waterschap Rivierenland/Beoordeling Primaire Keringen - LBO2 - 3_Project/Gedeelde informatie/Opleverdossier/99 Assemblage 16-1"
         ),
     )
@@ -34,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wl-max", type=float, default=10.0)
     parser.add_argument("--wl-count", type=int, default=101)
     parser.add_argument("--plot-beta", type=bool, default=True)
+    parser.add_argument("--plot-tree", type=bool, default=False)
     parser.add_argument("--beta-inf-substitute", type=float, default=None)
     return parser.parse_args()
 
@@ -104,6 +106,7 @@ def main() -> None:
     scenario_name = args.scenario_name
     water_levels = np.linspace(args.wl_min, args.wl_max, args.wl_count)
     plot_beta = args.plot_beta
+    plot_tree = args.plot_tree
     beta_inf_sub = args.beta_inf_substitute
 
     # Read all scenarios and structure them into sections
@@ -158,7 +161,8 @@ def main() -> None:
         for scen_name, (eeg, scen_prob, hr_loc) in tqdm.tqdm(scenarios.items(), leave=False, desc="Scenarios"):
             print(f"Processing section '{section_name}', scenario '{scen_name}'")
             # Save tree plot
-            eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
+            if plot_tree:
+                eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
 
             # Get combined scenario fragility curve
             fc_comb, fcs = eeg.get_failure_path_probabilities(water_levels=water_levels)
@@ -242,8 +246,10 @@ def main() -> None:
             raise ValueError("Multiple HR locations used for scenarios in a single section (can only be one)")
 
         # Assert that the scenario probabilities sum to 1
-        if not np.isclose(sum(scen_probs), 1):
-            raise ValueError(f"Scenario probabilities must sum to 1 for section '{section_name}'")
+        if not np.isclose(sum(scen_probs), 1.0):
+            raise ValueError(
+                f"Scenario probabilities must sum to 1 for section '{section_name}'. Got {sum(scen_probs)}"
+            )
 
         # Get combined section fragility curve
         fc_section = np.hstack(fc_section)
