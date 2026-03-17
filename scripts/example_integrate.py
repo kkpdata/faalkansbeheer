@@ -19,13 +19,11 @@ result = integrator.run(collect_diagnostics_trace=True)
 pprint(result.summary())
 
 # visualize
-fig, axs = plt.subplots(ncols=3, figsize=(18, 5), dpi=100)
-diag_axes = np.array([axs[0], axs[1]], dtype=object)
-hist_ax = axs[2]
-plot_integration_diagnostics_1d(result, axes=diag_axes)
+fig, axs = plt.subplots(ncols=2, figsize=(14, 5), dpi=100)
+plot_integration_diagnostics_1d(result, axes=axs[0])
 
 # visualize failure probability distribution over water levels
 water_levels = np.linspace(0, 10, 101)
-plot_failure_histogram(result, water_levels, ax=hist_ax)
+plot_failure_histogram(result, water_levels, ax=axs[1])
 
 plt.show()

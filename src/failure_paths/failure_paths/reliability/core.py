@@ -10,7 +10,13 @@ from scipy.optimize import minimize_scalar
 from ..common.prob import beta_from_pf, beta_from_pf_stable, pf_from_beta
 from .config import IntegrationConfig
 from .curve_distributions import FragilityDerivedDistribution, HazardDerivedDistribution
-from .results import FailureSamples, IntegrationDiagnosticsTrace, IntegrationResult
+from .results import (
+    DesignPointPhysical,
+    DesignPointUSpace,
+    FailureSamples,
+    IntegrationDiagnosticsTrace,
+    IntegrationResult,
+)
 
 
 @dataclass
@@ -1838,6 +1844,8 @@ class ReliabilityIntegrator:
             Computed output value.
         """
         w_fail = samples.weights
+        design_point_u: DesignPointUSpace | None = None
+        design_point_physical: DesignPointPhysical | None = None
         if w_fail.size == 0:
             pf = 0.0
             beta_pf = float("inf")
@@ -1855,6 +1863,16 @@ class ReliabilityIntegrator:
                 prob = float(np.clip(prob, 0.0, 1.0))
                 u_s_max = float(beta_from_pf(prob, tail="lower"))
             beta_star, alpha_val = self._solve_design_point(bounds, u_s_max=u_s_max)
+            if np.isfinite(beta_star) and np.all(np.isfinite(alpha_val)):
+                u_star = -np.asarray(alpha_val, dtype=float) * float(beta_star)
+                design_point_u = DesignPointUSpace(u1=float(u_star[0]), u2=float(u_star[1]))
+                r_star = float(self._map_u_to_distribution(np.array([u_star[0]], dtype=float), self.r_distribution)[0])
+                s_star = float(self._map_u_to_distribution(np.array([u_star[1]], dtype=float), self.s_distribution)[0])
+                design_point_physical = DesignPointPhysical(
+                    resistance=r_star,
+                    solicitation=s_star,
+                    delta_r_minus_s=r_star - s_star,
+                )
 
         hazard_level = None
         if self.config.hazard_curve is not None and np.isfinite(beta_star):
@@ -1877,4 +1895,6 @@ class ReliabilityIntegrator:
             estimated_logpf_error=samples.estimated_logpf_error,
             truncation_pf_error_bound=samples.truncation_pf_error_bound,
             u_bounds_used=samples.u_bounds_used,
+            design_point_u=design_point_u,
+            design_point_physical=design_point_physical,
         )

@@ -58,14 +58,14 @@ def integrate_and_plot(
     result = integrator.run(collect_diagnostics_trace=True)
 
     # visualize 1D integration diagnostics and histogram
-    fig, axs = plt.subplots(ncols=3, figsize=(18, 5), dpi=100)
-    diag_axes = np.array([axs[0], axs[1]], dtype=object)
-    hist_ax = axs[2]
-    plot_integration_diagnostics_1d(result, axes=diag_axes)
+    fig, axs = plt.subplots(ncols=2, figsize=(14, 5), dpi=100)
+    diag_ax = axs[0]
+    hist_ax = axs[1]
+    plot_integration_diagnostics_1d(result, axes=diag_ax)
 
     # Keep the internal water-level resolution, but ensure the outer bins include all failure samples.
     hist_edges = np.asarray(water_levels, dtype=float).copy()
-    failure_levels = result.failure_water_levels()
+    failure_levels = result.failure_solicitation_levels()
     if failure_levels is not None and failure_levels.size > 0:
         level_min = float(np.min(failure_levels))
         level_max = float(np.max(failure_levels))

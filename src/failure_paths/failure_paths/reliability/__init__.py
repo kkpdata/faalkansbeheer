@@ -3,7 +3,13 @@
 from .config import IntegrationConfig
 from .core import ReliabilityIntegrator
 from .curves import FragilityCurve, HazardCurve
-from .results import FailureSamples, IntegrationDiagnosticsTrace, IntegrationResult
+from .results import (
+    DesignPointPhysical,
+    DesignPointUSpace,
+    FailureSamples,
+    IntegrationDiagnosticsTrace,
+    IntegrationResult,
+)
 
 __all__ = [
     "IntegrationConfig",
@@ -11,6 +17,8 @@ __all__ = [
     "FailureSamples",
     "IntegrationDiagnosticsTrace",
     "IntegrationResult",
+    "DesignPointUSpace",
+    "DesignPointPhysical",
     "HazardCurve",
     "FragilityCurve",
 ]

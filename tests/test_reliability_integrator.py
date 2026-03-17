@@ -452,6 +452,38 @@ def test_alpha_is_nan_when_beta_star_is_zero_without_runtime_warning() -> None:
     assert all(item.category is not RuntimeWarning for item in caught)
     assert result.beta_star == pytest.approx(0.0)
     assert np.all(np.isnan(result.alpha))
+    assert result.design_point_u is None
+    assert result.design_point_physical is None
+
+
+def test_result_includes_physical_design_point_coordinates() -> None:
+    config = _default_config(coarse_points=81)
+    result = ReliabilityIntegrator(config=config).run()
+
+    assert result.design_point_u is not None
+    assert result.design_point_physical is not None
+
+    u1_star = result.design_point_u.u1
+    u2_star = result.design_point_u.u2
+    assert np.isclose(u1_star, -result.alpha[0] * result.beta_star, rtol=0.0, atol=1e-12)
+    assert np.isclose(u2_star, -result.alpha[1] * result.beta_star, rtol=0.0, atol=1e-12)
+
+    physical = result.design_point_physical
+    assert np.isfinite(physical.resistance)
+    assert np.isfinite(physical.solicitation)
+    assert abs(physical.delta_r_minus_s) <= 1e-10
+
+    payload = result.to_dict(include_samples=False)
+    assert "design_point_u" in payload
+    assert "design_point_physical" in payload
+    u_payload = payload["design_point_u"]
+    p_payload = payload["design_point_physical"]
+    assert isinstance(u_payload, dict)
+    assert isinstance(p_payload, dict)
+    assert u_payload["u1"] == pytest.approx(u1_star)
+    assert u_payload["u2"] == pytest.approx(u2_star)
+    assert p_payload["resistance"] == pytest.approx(physical.resistance)
+    assert p_payload["solicitation"] == pytest.approx(physical.solicitation)
 
 
 def test_design_point_solver_optimizes_all_feasible_intervals() -> None:
@@ -851,7 +883,7 @@ def test_failure_histogram_conserves_probability() -> None:
     integrator = ReliabilityIntegrator(config=config)
     result = integrator.run()
 
-    water_levels = result.failure_water_levels()
+    water_levels = result.failure_solicitation_levels()
     assert water_levels is not None
 
     level_min = float(water_levels.min()) - 1e-6
@@ -901,6 +933,6 @@ def test_result_dict_exposes_convergence_reason() -> None:
     result = ReliabilityIntegrator(config=config).run()
 
     payload = result.to_dict(include_samples=False)
-    diagnostics = payload.get("diagnostics")
+    diagnostics = payload.get("integration_diagnostics")
     assert isinstance(diagnostics, dict)
     assert diagnostics.get("convergence_reason") == result.convergence_reason
