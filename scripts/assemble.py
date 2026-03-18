@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tqdm.auto as tqdm
-from failure_paths.common.interp import LinearInterpolator
-from failure_paths.common.prob import beta_from_pf, pf_from_beta
+from failure_paths.common.interp import interpolate_beta_curve
+from failure_paths.common.prob import INTERPOLATION_BETA_CAP, beta_from_pf, pf_from_beta
 from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
 from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
@@ -59,9 +59,7 @@ def integrate_and_plot(
 
     # visualize 1D integration diagnostics and histogram
     fig, axs = plt.subplots(ncols=2, figsize=(14, 5), dpi=100)
-    diag_ax = axs[0]
-    hist_ax = axs[1]
-    plot_integration_diagnostics_1d(result, axes=diag_ax)
+    plot_integration_diagnostics_1d(result, axes=axs[0])
 
     # Keep the internal water-level resolution, but ensure the outer bins include all failure samples.
     hist_edges = np.asarray(water_levels, dtype=float).copy()
@@ -76,7 +74,7 @@ def integrate_and_plot(
 
     # visualize failure probability distribution over water levels
     _, _, hist_data = plot_failure_histogram(
-        result, hist_edges, ax=hist_ax, conditional=False, solicitation_distribution=integrator.s_distribution
+        result, hist_edges, ax=axs[1], conditional=False, solicitation_distribution=integrator.s_distribution
     )
     if scen_name == "combined":
         fig.savefig(fig_path / f"int_section_{scen_name}.png", bbox_inches="tight")
@@ -179,10 +177,15 @@ def main() -> None:
                 df_freq = table.df.sort_values("h")
                 df_freq["Beta_h"] = beta_from_pf(df_freq.Pf_h.to_numpy(), inf_substitute=beta_inf_sub)
                 if len(table.df) == 1:
-                    beta_vals = np.full(water_levels.shape, df_freq.Beta_h.iat[0])
+                    beta_vals = np.full(water_levels.shape, df_freq.Beta_h.to_numpy()[0])
                 elif len(table.df) > 1:
-                    interpolator = LinearInterpolator(df_freq.h.to_numpy(), df_freq.Beta_h.to_numpy())
-                    beta_vals = interpolator.value(water_levels)
+                    beta_cap = float(beta_inf_sub) if beta_inf_sub is not None else float(INTERPOLATION_BETA_CAP)
+                    beta_vals = interpolate_beta_curve(
+                        df_freq.h.to_numpy(),
+                        df_freq.Beta_h.to_numpy(),
+                        water_levels,
+                        beta_cap=beta_cap,
+                    )
                 else:
                     continue
                 if not np.isinf(beta_vals).all():
@@ -196,6 +199,14 @@ def main() -> None:
                     df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(end_fc.to_numpy(), inf_substitute=beta_inf_sub)
                 else:
                     df_fc_paths[f"path: {endnode_name}"] = end_fc.to_numpy()
+                # path_pf = fc.node_probabilities.to_numpy(dtype=float).prod(axis=1)
+                # endnode_id = fc.path.nodes[-1]
+                # endnode_name = eeg.graph.nodes[endnode_id]["description"] + f" ({endnode_id})"
+                # if plot_beta:
+                #     df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(path_pf, inf_substitute=beta_inf_sub)
+                # else:
+                #     df_fc_paths[f"path: {endnode_name}"] = path_pf
+
             df_fc_paths[f"scenario: {scen_name}"] = beta_from_pf(pfs, inf_substitute=beta_inf_sub) if plot_beta else pfs
             df_fc_paths = pd.DataFrame(df_fc_paths, index=water_levels)
 
@@ -235,7 +246,9 @@ def main() -> None:
 
         # Assert that the scenario probabilities sum to 1
         if not np.isclose(sum(scen_probs), 1.0):
-            raise ValueError(f"Scenario probabilities must sum to 1 for section '{section_name}'. Got {sum(scen_probs)}")
+            raise ValueError(
+                f"Scenario probabilities must sum to 1 for section '{section_name}'. Got {sum(scen_probs)}"
+            )
 
         # Get combined section fragility curve
         fc_section = np.hstack(fc_section)

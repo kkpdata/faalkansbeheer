@@ -17,7 +17,7 @@ from .models import (
     MetadataTable,
     PathTable,
 )
-from .special_ids import ReservedPathId
+from .special_ids import ReservedPathId, ScenarioStateId
 
 # Excel keyword constants
 KEYWORD_METADATA = "metadata"
@@ -32,7 +32,6 @@ class NormalizedPaths:
     indirect_values: list[str]
     indirect_column: str
     group_columns: list[str]
-    group_index_columns: list[str]
 
 
 @dataclass
@@ -194,9 +193,6 @@ class ExcelEventGraph(EventGraph):
 
         df_paths = df_paths.set_index("Faalpad_ID")
         group_columns = ["Overslag", indirect_type]
-        group_index_columns = [f"{g}_idx" for g in group_columns]
-        for group_idx, group_col in zip(group_index_columns, group_columns):
-            df_paths[group_idx], _ = pd.factorize(df_paths[group_col])
 
         return NormalizedPaths(
             df=df_paths,
@@ -204,7 +200,6 @@ class ExcelEventGraph(EventGraph):
             indirect_values=uniq_indirect,
             indirect_column=indirect_type,
             group_columns=group_columns,
-            group_index_columns=group_index_columns,
         )
 
     @staticmethod
@@ -244,13 +239,14 @@ class ExcelEventGraph(EventGraph):
         edges: list[GraphEdge] = []
         freq_rows = {col: [] for col in required_columns}
         groups: list[ScenarioGroup] = []
-        group_keys = normalized.group_columns + normalized.group_index_columns
+        group_keys = normalized.group_columns
 
-        for (overslag, indirect, overslag_idx, indirect_idx), group in normalized.df.groupby(group_keys):
-            overslag_idx = int(overslag_idx)
-            indirect_idx = int(indirect_idx)
-            cnode1 = (ReservedPathId.OVERTOPPING.value, overslag_idx)
-            cnode2 = (ReservedPathId.INDIRECT_MECHANISM.value, indirect_idx)
+        grouped_paths = normalized.df.groupby(group_keys, sort=True)
+        for indirect_group_idx, ((overslag, indirect), group) in enumerate(grouped_paths):
+            overslag_state = ScenarioStateId.from_label(overslag)
+            indirect_state = ScenarioStateId.from_label(indirect)
+            cnode1 = (ReservedPathId.OVERTOPPING.value, int(overslag_state))
+            cnode2 = (ReservedPathId.INDIRECT_MECHANISM.value, indirect_group_idx)
             nodes[cnode1] = GraphNode(
                 node_id=cnode1,
                 description=f"overslag: {overslag}",
@@ -266,16 +262,23 @@ class ExcelEventGraph(EventGraph):
             edges.append(GraphEdge(source=root_id, target=cnode1))
             edges.append(GraphEdge(source=cnode1, target=cnode2))
 
-            for uniq_vals, cval, ctype, fid, kid in zip(
-                [normalized.overslag_values, normalized.indirect_values],
-                [overslag, indirect],
-                ["overslag", normalized.indirect_column],
-                [
+            scenario_dimensions = (
+                (
+                    normalized.overslag_values,
+                    overslag_state,
+                    "overslag",
                     ReservedPathId.OVERTOPPING.value,
+                    cnode1[1],
+                ),
+                (
+                    normalized.indirect_values,
+                    indirect_state,
+                    normalized.indirect_column,
                     ReservedPathId.INDIRECT_MECHANISM.value,
-                ],
-                [overslag_idx, indirect_idx],
-            ):
+                    cnode2[1],
+                ),
+            )
+            for uniq_vals, cstate, ctype, fid, kid in scenario_dimensions:
                 if len(uniq_vals) == 1:
                     freq_rows["Faalpad_ID"].append(fid)
                     freq_rows["Knoop_ID"].append(kid)
@@ -292,7 +295,7 @@ class ExcelEventGraph(EventGraph):
                         freq_rows["Faalpad_ID"].append(fid)
                         freq_rows["Knoop_ID"].append(kid)
                         freq_rows["h"].append(row.h)
-                        pf_val = row.Pf_h if cval == "ja" else 1.0 - row.Pf_h
+                        pf_val = cstate.transform_pf(row.Pf_h)
                         freq_rows["Pf_h"].append(pf_val)
                         freq_rows["Beta_h"].append(np.nan)
 
