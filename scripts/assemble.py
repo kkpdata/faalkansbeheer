@@ -234,8 +234,8 @@ def main() -> None:
             raise ValueError("Multiple HR locations used for scenarios in a single section (can only be one)")
 
         # Assert that the scenario probabilities sum to 1
-        if not np.isclose(sum(scen_probs), 1):
-            raise ValueError(f"Scenario probabilities must sum to 1 for section '{section_name}'")
+        if not np.isclose(sum(scen_probs), 1.0):
+            raise ValueError(f"Scenario probabilities must sum to 1 for section '{section_name}'. Got {sum(scen_probs)}")
 
         # Get combined section fragility curve
         fc_section = np.hstack(fc_section)
