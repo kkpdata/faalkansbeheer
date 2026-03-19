@@ -52,5 +52,4 @@ pytest-cov = ">=7.0"
 scipy = ">=1.16"
 matplotlib = ">=3.10.8,<4"
 tqdm = ">=4.67.1,<5"
-d-geolib = ">=2.8"
 failure_paths = { path = "src/failure_paths", editable = true }
