@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from failure_paths.eventgraph import ReservedPathId
-from failure_paths.eventgraph.models import EventTable, MetadataTable, PathTable
+from failure_paths.eventgraph.models import EventTable, FrequencyTable, MetadataTable, PathTable
 
 
 def test_event_table_fills_pf_and_beta() -> None:
@@ -136,3 +136,37 @@ def test_metadata_table_missing_required_columns_raises() -> None:
     )
     with pytest.raises(ValueError):
         MetadataTable.from_dataframe(df_metadata)
+
+
+def test_frequency_table_drops_rows_with_all_required_fields_missing() -> None:
+    df_frequency = pd.DataFrame(
+        {
+            "h": [0.0, np.nan, 1.0],
+            "Pf_h": [0.5, np.nan, 0.6],
+            "extra": ["a", "blank", "b"],
+        }
+    )
+
+    table = FrequencyTable.from_dataframe(df_frequency)
+
+    result = table.df.reset_index(drop=True)
+    assert result.shape[0] == 2
+    assert result["h"].tolist() == [0.0, 1.0]
+    assert result["Pf_h"].tolist() == [0.5, 0.6]
+
+
+def test_event_table_drops_rows_with_all_required_fields_missing() -> None:
+    df_event = pd.DataFrame(
+        {
+            "Faalpad_ID": [1, np.nan, 1],
+            "Knoop_ID": [1, np.nan, 2],
+            "h": [0.0, np.nan, 0.0],
+            "Pf_h": [0.01, np.nan, 0.02],
+            "Beta_h": [np.nan, np.nan, np.nan],
+        }
+    )
+
+    table = EventTable.from_dataframe(df_event)
+
+    assert len(table.df) == 2
+    assert set(table.df.index.tolist()) == {(1, 1), (1, 2)}

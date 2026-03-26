@@ -32,4 +32,7 @@ class FrequencyTable(TableModel):
     ) -> FrequencyTable:
         """Create a frequency table while discarding fully empty required rows."""
         df_copy = df.copy()
+        required_subset = [col for col in cls.required_columns if col in df_copy.columns]
+        if required_subset:
+            df_copy = df_copy.dropna(axis=0, how="all", subset=required_subset)
         return super().from_dataframe(df_copy, context=context)

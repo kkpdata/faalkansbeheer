@@ -208,6 +208,9 @@ class EventTable(TableModel):
         """
         # Drop rows where all required event fields are missing.
         df_copy = df.copy()
+        required_subset = [col for col in cls.required_columns if col in df_copy.columns]
+        if required_subset:
+            df_copy = df_copy.dropna(axis=0, how="all", subset=required_subset)
 
         table = super().from_dataframe(df_copy, context=context)
         table.df = table.df.sort_index()
