@@ -16,7 +16,7 @@ from ...common.prob import (
     pf_from_beta,
 )
 from ..special_ids import ReservedPathId
-from .table_model import TableModel
+from .table_model import TableLoadContext, TableModel
 
 
 class EventSchema(pa.DataFrameModel):
@@ -181,13 +181,20 @@ class EventTable(TableModel):
         return pf_filled
 
     @classmethod
-    def from_dataframe(cls, df: pd.DataFrame) -> EventTable:
+    def from_dataframe(
+        cls,
+        df: pd.DataFrame,
+        *,
+        context: TableLoadContext | None = None,
+    ) -> EventTable:
         """Create an :class:`EventTable` with Pf/Beta completeness safeguards.
 
         Parameters
         ----------
         df : pd.DataFrame
             Input dataframe with event probability information.
+        context : TableLoadContext | None, optional
+            Origin metadata used to enrich upstream schema-validation errors.
 
         Returns
         -------
@@ -199,7 +206,10 @@ class EventTable(TableModel):
         ValueError
             If any row lacks both ``Pf_h`` and ``Beta_h`` values.
         """
-        table = super().from_dataframe(df)
+        # Drop rows where all required event fields are missing.
+        df_copy = df.copy()
+
+        table = super().from_dataframe(df_copy, context=context)
         table.df = table.df.sort_index()
         pf = table.df["Pf_h"]
         beta = table.df["Beta_h"]
@@ -208,7 +218,8 @@ class EventTable(TableModel):
         missing_both = pf.isna() & beta.isna()
         if missing_both.any():
             missing_rows = table.df.index[missing_both].tolist()
-            raise ValueError(f"Each row must define Pf_h or Beta_h; missing rows: {missing_rows}")
+            msg = f"Each row must define Pf_h or Beta_h; missing rows: {missing_rows}"
+            raise ValueError(cls._format_with_context(msg, context))
 
         # Fill beta and pf value
         table.df["Beta_h"] = cls._fill_beta_from_pf(pf, beta)
@@ -224,7 +235,8 @@ class EventTable(TableModel):
         if duplicated.any():
             duplicates = table.df.reset_index().loc[duplicated, dupe_subset]
             dup_str = duplicates.to_dict(orient="records").__repr__()
-            raise ValueError(f"Duplicate events detected for combinations of {dupe_subset}: {dup_str}")
+            msg = f"Duplicate events detected for combinations of {dupe_subset}: {dup_str}"
+            raise ValueError(cls._format_with_context(msg, context))
 
         # Validate monotone fragility curves per event id.
         # Regular faalpaden must be non-decreasing with h.
@@ -265,10 +277,11 @@ class EventTable(TableModel):
         if violations:
             sample = violations[:5]
             special_ids_label = f"{ReservedPathId.INDIRECT_MECHANISM.value}/{ReservedPathId.OVERTOPPING.value}"
-            raise ValueError(
+            msg = (
                 "Invalid fragility curve: Pf_h must be non-decreasing with increasing h; "
                 f"special Faalpad_ID {special_ids_label} must be monotone. "
                 f"Violations (showing up to 5): {sample}"
             )
+            raise ValueError(cls._format_with_context(msg, context))
 
         return table

@@ -16,6 +16,7 @@ from .models import (
     GraphNode,
     MetadataTable,
     PathTable,
+    TableLoadContext,
 )
 from .special_ids import ReservedPathId, ScenarioStateId
 
@@ -370,9 +371,15 @@ class ExcelEventGraph(EventGraph):
 
                 df_part = pd.read_excel(xlsx, sheet_name=scenario_sheet, skiprows=idx_start, nrows=nrows)
                 df_part = df_part.loc[:, ~df_part.columns.str.startswith("Unnamed:")]
-                table_mapping[key] = table_mapping[key].from_dataframe(df_part)
+                context = TableLoadContext(
+                    workbook_path=excel_path,
+                    sheet_name=scenario_sheet,
+                    table_name=key,
+                    data_start_row=idx_start + 2,
+                )
+                table_mapping[key] = table_mapping[key].from_dataframe(df_part, context=context)
 
-            freq_tables = ExcelEventGraph._load_frequency_tables(xlsx)
+            freq_tables = ExcelEventGraph._load_frequency_tables(xlsx, workbook_path=excel_path)
 
         return (
             table_mapping[KEYWORD_METADATA],
@@ -382,13 +389,18 @@ class ExcelEventGraph(EventGraph):
         )
 
     @staticmethod
-    def _load_frequency_tables(xlsx: pd.ExcelFile) -> dict[str, FrequencyTable]:
+    def _load_frequency_tables(
+        xlsx: pd.ExcelFile,
+        workbook_path: Path | str | None = None,
+    ) -> dict[str, FrequencyTable]:
         """Load frequency tables from sheets prefixed with ``FP_``.
 
         Parameters
         ----------
         xlsx : pd.ExcelFile
             Open workbook handle reused while parsing other tables.
+        workbook_path : Path | str | None
+            Optional workbook path used for enriched validation errors.
 
         Returns
         -------
@@ -403,7 +415,13 @@ class ExcelEventGraph(EventGraph):
             if not freq_type:
                 continue
             df_freq = pd.read_excel(xlsx, sheet_name=sheet_name)
-            freq_tables[freq_type] = FrequencyTable.from_dataframe(df_freq)
+            context = TableLoadContext(
+                workbook_path=workbook_path,
+                sheet_name=sheet_name,
+                table_name=sheet_name,
+                data_start_row=2,
+            )
+            freq_tables[freq_type] = FrequencyTable.from_dataframe(df_freq, context=context)
         return freq_tables
 
     @staticmethod

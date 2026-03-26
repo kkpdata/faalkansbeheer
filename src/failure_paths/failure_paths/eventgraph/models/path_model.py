@@ -7,7 +7,7 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import Series
 
-from .table_model import TableModel
+from .table_model import TableLoadContext, TableModel
 
 
 class PathSchema(pa.DataFrameModel):
@@ -153,7 +153,12 @@ class PathTable(TableModel):
         return dynamic_schema
 
     @classmethod
-    def from_dataframe(cls, df: pd.DataFrame) -> PathTable:
+    def from_dataframe(
+        cls,
+        df: pd.DataFrame,
+        *,
+        context: TableLoadContext | None = None,
+    ) -> PathTable:
         """
         Build a :class:`PathTable` from a dataframe with arbitrary follow-ups.
 
@@ -161,11 +166,19 @@ class PathTable(TableModel):
         ----------
         df : pd.DataFrame
             Input dataframe containing failure paths and follow-up events.
+        context : TableLoadContext | None, optional
+            Origin metadata used to enrich validation failures.
 
         Returns
         -------
         PathTable
             Validated table with normalized follow-up columns and overslag values.
+
+        Raises
+        ------
+        ValueError
+            If indirect-mechanism values are invalid, if follow-up column names
+            are malformed, or if schema validation fails.
         """
         # Drop rows that are nan except for the first column
         df_copy = df.copy()
@@ -176,13 +189,19 @@ class PathTable(TableModel):
             df_copy["Overslag"] = df_copy["Overslag"].map(cls._normalize_str)
         if "Indirect_mechanisme" in df.columns:
             df_copy["Indirect_mechanisme"] = df_copy["Indirect_mechanisme"].map(cls._normalize_str)
-            cls._validate_indirect_mechanism(df_copy["Indirect_mechanisme"])
+            try:
+                cls._validate_indirect_mechanism(df_copy["Indirect_mechanisme"])
+            except ValueError as exc:
+                raise ValueError(cls._format_with_context(str(exc), context)) from exc
 
-        schema_cls = cls._schema_for_columns(df_copy.columns)
+        try:
+            schema_cls = cls._schema_for_columns(df_copy.columns)
+        except ValueError as exc:
+            raise ValueError(cls._format_with_context(str(exc), context)) from exc
         previous_schema = cls.schema_model
         cls.schema_model = schema_cls
         try:
-            return super().from_dataframe(df_copy)
+            return super().from_dataframe(df_copy, context=context)
         finally:
             # Always restore the base schema so subsequent calls start from a
             # clean state, regardless of validation success or failure.

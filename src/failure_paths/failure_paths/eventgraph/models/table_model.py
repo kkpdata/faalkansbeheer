@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from numbers import Real
+from pathlib import Path
 from typing import ClassVar, Self
 
 import pandas as pd
 import pandera.pandas as pa
+from pandera.errors import SchemaError, SchemaErrors
 from pydantic import BaseModel, ConfigDict, Field
+
+
+@dataclass(frozen=True)
+class TableLoadContext:
+    """Origin metadata used to enrich dataframe validation errors."""
+
+    workbook_path: str | Path | None = None
+    sheet_name: str | None = None
+    table_name: str | None = None
+    data_start_row: int | None = None
 
 
 class TableModel(BaseModel):
@@ -28,7 +42,12 @@ class TableModel(BaseModel):
     df: pd.DataFrame = Field(default_factory=pd.DataFrame, repr=False)
 
     @classmethod
-    def from_dataframe(cls, df: pd.DataFrame) -> Self:
+    def from_dataframe(
+        cls,
+        df: pd.DataFrame,
+        *,
+        context: TableLoadContext | None = None,
+    ) -> Self:
         """
         Create a table from a raw dataframe.
 
@@ -36,6 +55,9 @@ class TableModel(BaseModel):
         ----------
         df : pd.DataFrame
             Input dataframe that should contain the configured required columns.
+        context : TableLoadContext | None, optional
+            Optional metadata about workbook/sheet/table origin used to enrich
+            validation errors with source locations.
 
         Returns
         -------
@@ -55,7 +77,8 @@ class TableModel(BaseModel):
                 missing.append(col)
 
         if missing:
-            raise ValueError(f"{cls.table_name} table missing columns: {sorted(missing)}")
+            message = f"{cls.table_name} table missing columns: {sorted(missing)}"
+            raise ValueError(cls._format_with_context(message, context))
 
         for col, default in cls.default_values.items():
             if col not in df_copy.columns:
@@ -67,7 +90,10 @@ class TableModel(BaseModel):
         ordered = df_copy[column_order + rest] if column_order else df_copy
 
         if cls.schema_model is not None:
-            validated_df = cls.schema_model.validate(ordered)
+            try:
+                validated_df = cls.schema_model.validate(ordered)
+            except (SchemaError, SchemaErrors) as exc:
+                raise ValueError(cls._build_schema_error_message(exc, context)) from exc
         else:
             validated_df = ordered
 
@@ -77,6 +103,80 @@ class TableModel(BaseModel):
             validated_df = validated_df.reset_index(drop=True)
 
         return cls(df=validated_df)
+
+    @classmethod
+    def _format_with_context(cls, message: str, context: TableLoadContext | None) -> str:
+        """Append workbook/sheet/table details to an error message when available."""
+        if context is None:
+            return message
+
+        details: list[str] = []
+        if context.workbook_path is not None:
+            details.append(f"workbook={Path(context.workbook_path)}")
+        if context.sheet_name:
+            details.append(f"sheet={context.sheet_name!r}")
+        table_name = context.table_name or cls.table_name or cls.__name__
+        details.append(f"table={table_name!r}")
+        if context.data_start_row is not None:
+            details.append(f"data_start_row={context.data_start_row}")
+
+        return f"{message} ({', '.join(details)})"
+
+    @staticmethod
+    def _extract_failure_indices(error: SchemaError | SchemaErrors) -> list[int]:
+        """Return distinct dataframe row indices reported by Pandera."""
+        failure_cases = getattr(error, "failure_cases", None)
+        if not isinstance(failure_cases, pd.DataFrame) or "index" not in failure_cases.columns:
+            return []
+
+        row_indices: set[int] = set()
+        for value in failure_cases["index"].dropna().tolist():
+            parsed = TableModel._to_int_index(value)
+            if parsed is not None and parsed >= 0:
+                row_indices.add(parsed)
+
+        return sorted(row_indices)
+
+    @staticmethod
+    def _to_int_index(value: object) -> int | None:
+        """Convert a Pandera failure-case index value to an integer when possible."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, Real):
+            value_float = float(value)
+            if value_float.is_integer():
+                return int(value_float)
+        return None
+
+    @classmethod
+    def _build_schema_error_message(
+        cls,
+        error: SchemaError | SchemaErrors,
+        context: TableLoadContext | None,
+    ) -> str:
+        """Create a descriptive validation failure message from Pandera exceptions."""
+        parts: list[str] = []
+
+        column_name = getattr(error, "column_name", None)
+        if isinstance(column_name, str):
+            parts.append(f"column={column_name!r}")
+
+        reason_code = getattr(error, "reason_code", None)
+        if reason_code is not None:
+            parts.append(f"reason={getattr(reason_code, 'value', str(reason_code))!r}")
+
+        row_indices = cls._extract_failure_indices(error)
+        if row_indices:
+            parts.append(f"dataframe_rows={row_indices}")
+            if context is not None and context.data_start_row is not None:
+                excel_rows = [context.data_start_row + row for row in row_indices]
+                parts.append(f"excel_rows={excel_rows}")
+
+        details = f" [{'; '.join(parts)}]" if parts else ""
+        base = f"Data validation failed: {error}"
+        return cls._format_with_context(f"{base}{details}", context)
 
     def to_dataframe(self) -> pd.DataFrame:
         """
@@ -127,7 +227,12 @@ class TableModel(BaseModel):
         return df_repr.loc[:, list(self.required_columns)]
 
     @classmethod
-    def from_records(cls, df: pd.DataFrame) -> Self:
+    def from_records(
+        cls,
+        df: pd.DataFrame,
+        *,
+        context: TableLoadContext | None = None,
+    ) -> Self:
         """
         Construct an instance from a normalized dataframe.
 
@@ -136,13 +241,16 @@ class TableModel(BaseModel):
         df : pd.DataFrame
             Input dataframe typically originating from SQLite or another serialized
             store.
+        context : TableLoadContext | None, optional
+            Optional metadata about workbook/sheet/table origin used to enrich
+            validation errors with source locations.
 
         Returns
         -------
         Self
             Validated table containing the provided records.
         """
-        return cls.from_dataframe(df)
+        return cls.from_dataframe(df, context=context)
 
     def __repr__(self) -> str:
         """Represent the table with its dataframe contents."""

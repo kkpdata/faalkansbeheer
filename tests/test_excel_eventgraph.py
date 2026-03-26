@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from failure_paths.eventgraph.models import PathTable
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from failure_paths import ExcelEventGraph
 
@@ -194,3 +194,22 @@ def test_excel_eventgraph_errors_on_missing_frequency_table(tmp_path: Path) -> N
 
     with pytest.raises(ValueError, match="Frequency table.*overslag"):
         ExcelEventGraph.load(excel_path, "scenario1")
+
+
+def test_excel_eventgraph_validation_errors_include_excel_context(tmp_path: Path) -> None:
+    excel_path = tmp_path / "invalid_freq_context.xlsx"
+    create_example_workbook(excel_path)
+
+    workbook = load_workbook(excel_path)
+    fp_sheet = workbook["FP_overslag"]
+    fp_sheet.append([None, 0.7])
+    workbook.save(excel_path)
+
+    with pytest.raises(ValueError) as exc:
+        ExcelEventGraph.load(excel_path, "scenario1")
+
+    message = str(exc.value)
+    assert "sheet='FP_overslag'" in message
+    assert "table='FP_overslag'" in message
+    assert "column='h'" in message
+    assert "excel_rows=[4]" in message
