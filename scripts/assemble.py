@@ -8,6 +8,7 @@ import pandas as pd
 import tqdm.auto as tqdm
 from failure_paths.common.interp import interpolate_beta_curve
 from failure_paths.common.prob import INTERPOLATION_BETA_CAP, beta_from_pf, pf_from_beta
+from failure_paths.common.assemblage import bepaal_N_vak, combine_series
 from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
 from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
@@ -26,7 +27,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wl-max", type=float, default=10.0)
     parser.add_argument("--wl-count", type=int, default=101)
     parser.add_argument("--plot-beta", type=bool, default=True)
+    parser.add_argument("--plot-tree", type=bool, default=True)
     parser.add_argument("--beta-inf-substitute", type=float, default=None)
+    parser.add_argument("--a-vak", type=float, default=1/30.0, help='Mechanismegevoelige fractie (a) voor bepaling N_vak')
+    parser.add_argument("--delta-L", type=float, default=50.0, help='Equivalente onafhankelijke lengte (dL) voor bepaling N_vak')
     return parser.parse_args()
 
 
@@ -94,7 +98,10 @@ def main() -> None:
     scenario_name = args.scenario_name
     water_levels = np.linspace(args.wl_min, args.wl_max, args.wl_count)
     plot_beta = args.plot_beta
+    plot_tree = args.plot_tree
     beta_inf_sub = args.beta_inf_substitute
+    a_vak = args.a_vak
+    delta_L = args.delta_L
 
     # Read all scenarios and structure them into sections
     sections = {}
@@ -148,7 +155,8 @@ def main() -> None:
         for scen_name, (eeg, scen_prob, hr_loc) in tqdm.tqdm(scenarios.items(), leave=False, desc="Scenarios"):
             print(f"Processing section '{section_name}', scenario '{scen_name}'")
             # Save tree plot
-            eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
+            if plot_tree:
+                eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
 
             # Get combined scenario fragility curve
             fc_comb, fcs = eeg.get_failure_path_probabilities(water_levels=water_levels)
@@ -293,7 +301,21 @@ def main() -> None:
 
     # Write summary result
     df_result1 = pd.DataFrame(df_result1)
-    df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result.xlsx")
+    # Calculate Nvak for each row bases on the length of the vak (LENGTE_VAK), a=1.0, and delta_L (equivalent independent length for STPH)
+    df_result1["N_vak"] = np.vectorize(bepaal_N_vak)(df_result1["LENGTE_VAK"], a_vak, delta_L)
+    # Upscale to vak level
+    df_result1["Vak_Section_Pf"] = df_result1["Section_Pf"] * df_result1["N_vak"]
+    # create a list of the first "Vak_Section_Pf" values for each unique Vaknaam
+    vak_section_pfs = []
+    for vaknaam in df_result1["Vaknaam"].unique():
+        vak_section_pfs.append(df_result1[df_result1["Vaknaam"] == vaknaam]["Vak_Section_Pf"].iloc[0])
+    # Calculate combined Pf for each Vaknaam using combine_series
+    bovengrens_pf, ondergrens_pf = combine_series(vak_section_pfs)
+    # add combined Pf to the dataframe (same value for each row)
+    df_result1["Traject_Pf_bovengrens"] = bovengrens_pf
+    df_result1["Traject_Pf_ondergrens"] = ondergrens_pf
+
+    df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result.xlsx", index=False)
 
 
 if __name__ == "__main__":
