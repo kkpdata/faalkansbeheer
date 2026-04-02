@@ -1,9 +1,9 @@
 import scipy.stats as sct
 
 
-
 TRAJECT_PROPERTIES = {
-    "16-1": {"signaleringswaarde": 100_000, "ondergrens": 30_000, "lengte": 15_059.41}
+    "16-1": {"signaleringswaarde": 100_000, "ondergrens": 30_000, "lengte": 15_059.41},
+    "16-2": {"signaleringswaarde": 30_000, "ondergrens": 10_000, "lengte": 30972.09},
 }
 
 
@@ -15,9 +15,6 @@ class TrajectNormering:
     def __init__(
             self,
             traject_id: str,  # Bijvoorbeeld '16-1'
-            signaleringswaarde: int,  # In jaren, bijvoorbeeld 100.000 voor 16-1
-            ondergrens: int,  # In jaren, bijvoorbeeld 30.000 voor 16-1
-            traject_lengte: float,  # In meters, bijvoorbeeld 15059.41 voor 16-1
             norm_is_ondergrens: bool = True,
             bovenrivierengebied: bool = True,
     ):
@@ -27,10 +24,10 @@ class TrajectNormering:
 
         # Parameters
         self.traject_id: str = traject_id
-        self.signaleringswaarde: int = signaleringswaarde
-        self.ondergrens: int = ondergrens
+        self.signaleringswaarde: int = TRAJECT_PROPERTIES[traject_id]["signaleringswaarde"]
+        self.ondergrens: int = TRAJECT_PROPERTIES[traject_id]["ondergrens"]
         self.w: float = 0.24
-        self.traject_lengte: float = traject_lengte
+        self.traject_lengte: float = TRAJECT_PROPERTIES[traject_id]["lengte"]
         self.faalkanseis_signaleringswaarde = 1.0 / self.signaleringswaarde
         self.faalkanseis_ondergrens = 1.0 / self.ondergrens
         self.faalkanseis_norm = self.faalkanseis_ondergrens

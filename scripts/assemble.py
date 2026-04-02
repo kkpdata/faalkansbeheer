@@ -14,7 +14,7 @@ from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
 from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
 from failure_paths.common.graph_betrouwbaarheidsindex import GraphBetaValuesSingleInteractive
-from failure_paths.common.traject_normering import TrajectNormering, TRAJECT_PROPERTIES
+from failure_paths.common.traject_normering import TrajectNormering
 from failure_paths import ExcelEventGraph
 
 
@@ -92,7 +92,7 @@ def integrate_and_plot(
     return result
 
 
-def _export_graph(df: DataFrame, export_dir: str):
+def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
 
     df = df.rename(columns={"M_VAN": 'm_start', "M_TOT": 'm_end', "dijkvaknummer": 'id'})
     df["beta"] = df["Vak_Section_Pf"].apply(lambda x: -1 * sct.norm.ppf(x))
@@ -100,9 +100,7 @@ def _export_graph(df: DataFrame, export_dir: str):
 
     beta_traject = df["Traject_Pf_ondergrens"].iloc[0]
 
-    traject_normering = TrajectNormering(
-        traject_id="16-1", ,
-        norm_is_ondergrens=True)
+    traject_normering = TrajectNormering(traject_id=dijktraject, norm_is_ondergrens=True)
     GraphBetaValuesSingleInteractive(
         traject_normering=traject_normering, df_beta_vak=df_beta_vak, beta_traject=beta_traject, export_dir=export_dir)
 
@@ -119,7 +117,7 @@ def main() -> None:
     plot_tree = args.plot_tree
     beta_inf_sub = args.beta_inf_substitute
     a_vak = args.a_vak
-    a_vak = args.a_vak
+    dijktraject = args.dijktraject
     delta_L = args.delta_L
 
     # Read all scenarios and structure them into sections
@@ -337,7 +335,7 @@ def main() -> None:
     df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result.xlsx", index=False)
 
     export_dir = output_folder / dir_traject.name
-    _export_graph(df=df_result1, export_dir=export_dir)
+    _export_graph(df=df_result1, export_dir=export_dir, dijktraject=dijktraject)
 
 
 if __name__ == "__main__":
