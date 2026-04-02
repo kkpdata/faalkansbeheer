@@ -3,7 +3,7 @@ import numpy as np
 import os
 from datetime import datetime
 import plotly.graph_objects as go
-from geoprob_pipe.input_data.traject_normering import TrajectNormering
+from failure_paths.common.traject_normering import TrajectNormering
 from typing import Optional
 
 

@@ -1,10 +1,4 @@
-import os.path
 import scipy.stats as sct
-import sqlite3
-from typing import Tuple, Optional, Dict
-from shapely import LineString
-import importlib.resources
-from geopandas import read_file, GeoDataFrame
 
 
 class TrajectNormering:

@@ -1,10 +1,11 @@
 import argparse
 import math
 from pathlib import Path
-
 import matplotlib.pyplot as plt
+import scipy.stats as sct
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 import tqdm.auto as tqdm
 from failure_paths.common.interp import interpolate_beta_curve
 from failure_paths.common.prob import INTERPOLATION_BETA_CAP, beta_from_pf, pf_from_beta
@@ -12,7 +13,8 @@ from failure_paths.common.assemblage import bepaal_N_vak, combine_series
 from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
 from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
-
+from failure_paths.common.graph_betrouwbaarheidsindex import GraphBetaValuesSingleInteractive
+from failure_paths.common.traject_normering import TrajectNormering
 from failure_paths import ExcelEventGraph
 
 
@@ -87,6 +89,21 @@ def integrate_and_plot(
     plt.close("all")
 
     return result
+
+
+def _export_graph(df: DataFrame, export_dir: str):
+
+    df = df.rename(columns={"M_VAN": 'm_start', "M_TOT": 'm_end', "dijkvaknummer": 'id'})
+    df["beta"] = df["Vak_Section_Pf"].apply(lambda x: -1 * sct.norm.ppf(x))
+    df_beta_vak = df[["id", "m_start", "m_end", "beta"]]
+
+    beta_traject = df["Traject_Pf_ondergrens"].iloc[0]
+
+    traject_normering = TrajectNormering(
+        traject_id="16-1", signaleringswaarde=100_000, ondergrens=30_000, traject_lengte=15_059.41,
+        norm_is_ondergrens=True)
+    GraphBetaValuesSingleInteractive(
+        traject_normering=traject_normering, df_beta_vak=df_beta_vak, beta_traject=beta_traject, export_dir=export_dir)
 
 
 def main() -> None:
@@ -316,6 +333,9 @@ def main() -> None:
     df_result1["Traject_Pf_ondergrens"] = ondergrens_pf
 
     df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result.xlsx", index=False)
+
+    export_dir = output_folder / dir_traject.name
+    _export_graph(df=df_result1, export_dir=export_dir)
 
 
 if __name__ == "__main__":
