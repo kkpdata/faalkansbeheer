@@ -36,6 +36,7 @@ ruff = ">=0.14"
 quarto = ">=1.5"
 quartodoc = ">=0.9"
 pre-commit = ">=4.5"
+plotly = ">=6.6.0,<7"
 
 [pypi-dependencies]
 networkx = ">=3.6"

@@ -26,7 +26,6 @@ def parse_args() -> argparse.Namespace:
         "--dir-traject",
         type=Path,
         default=Path(
-            # "C:/Users/SAKA/Downloads/DT16-1_TMP"
             "C:/Users/SAKA/Waterschap Rivierenland/Beoordeling Primaire Keringen - LBO2 - 3_Project/Gedeelde informatie/Opleverdossier/99 Assemblage 16-1"
         ),
     )
@@ -38,8 +37,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plot-beta", type=bool, default=True)
     parser.add_argument("--plot-tree", type=bool, default=False)
     parser.add_argument("--beta-inf-substitute", type=float, default=None)
-    parser.add_argument("--a-vak", type=float, default=1/30.0, help='Mechanismegevoelige fractie (a) voor bepaling N_vak')
-    parser.add_argument("--delta-L", type=float, default=50.0, help='Equivalente onafhankelijke lengte (dL) voor bepaling N_vak')
+    parser.add_argument(
+        "--a-vak", type=float, default=0.5, help="Mechanismegevoelige fractie (a) voor bepaling N_vak"
+    )
+    parser.add_argument(
+        "--delta-L", type=float, default=50.0, help="Equivalente onafhankelijke lengte (dL) voor bepaling N_vak"
+    )
     return parser.parse_args()
 
 
@@ -223,7 +226,7 @@ def main() -> None:
                 #     df_fc_paths[f"path: {endnode_name}"] = beta_from_pf(path_pf, inf_substitute=beta_inf_sub)
                 # else:
                 #     df_fc_paths[f"path: {endnode_name}"] = path_pf
-            
+
             df_fc_paths[f"scenario: {scen_name}"] = beta_from_pf(pfs, inf_substitute=beta_inf_sub) if plot_beta else pfs
             df_fc_paths = pd.DataFrame(df_fc_paths, index=water_levels)
 

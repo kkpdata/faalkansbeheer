@@ -31,8 +31,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plot-beta", type=bool, default=True)
     parser.add_argument("--plot-tree", type=bool, default=True)
     parser.add_argument("--beta-inf-substitute", type=float, default=None)
-    parser.add_argument("--a-vak", type=float, default=1/30.0, help='Mechanismegevoelige fractie (a) voor bepaling N_vak')
+    parser.add_argument("--a-vak", type=float, default=0.5, help='Mechanismegevoelige fractie (a) voor bepaling N_vak')
     parser.add_argument("--delta-L", type=float, default=50.0, help='Equivalente onafhankelijke lengte (dL) voor bepaling N_vak')
+    parser.add_argument("--dijktraject", type=str, default="16-1")
     return parser.parse_args()
 
 
