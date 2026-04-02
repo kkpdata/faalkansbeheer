@@ -14,7 +14,7 @@ from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
 from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
 from failure_paths.common.graph_betrouwbaarheidsindex import GraphBetaValuesSingleInteractive
-from failure_paths.common.traject_normering import TrajectNormering
+from failure_paths.common.traject_normering import TrajectNormering, TRAJECT_PROPERTIES
 from failure_paths import ExcelEventGraph
 
 
@@ -100,7 +100,7 @@ def _export_graph(df: DataFrame, export_dir: str):
     beta_traject = df["Traject_Pf_ondergrens"].iloc[0]
 
     traject_normering = TrajectNormering(
-        traject_id="16-1", signaleringswaarde=100_000, ondergrens=30_000, traject_lengte=15_059.41,
+        traject_id="16-1", ,
         norm_is_ondergrens=True)
     GraphBetaValuesSingleInteractive(
         traject_normering=traject_normering, df_beta_vak=df_beta_vak, beta_traject=beta_traject, export_dir=export_dir)
@@ -117,6 +117,7 @@ def main() -> None:
     plot_beta = args.plot_beta
     plot_tree = args.plot_tree
     beta_inf_sub = args.beta_inf_substitute
+    a_vak = args.a_vak
     a_vak = args.a_vak
     delta_L = args.delta_L
 

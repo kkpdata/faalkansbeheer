@@ -1,6 +1,12 @@
 import scipy.stats as sct
 
 
+
+TRAJECT_PROPERTIES = {
+    "16-1": {"signaleringswaarde": 100_000, "ondergrens": 30_000, "lengte": 15_059.41}
+}
+
+
 class TrajectNormering:
     """ Gathers the traject id and calculates the traject normering
     from the HRD-files.
