@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from failure_paths.eventgraph import EventGraphStore, ExcelEventGraph, SqliteEventGraph
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Configuration – adjust these values before running the script.
@@ -13,6 +14,7 @@ EXCELS = [
     Path("scripts/example_input/AW172_voorbeeld_GD.xlsx"),
 ]
 TAGS: str | None = None
+WATER_LEVELS = np.linspace(0, 10, 11)  # Example values, adjust as needed
 # ---------------------------------------------------------------------------
 
 
@@ -85,7 +87,7 @@ if __name__ == "__main__":
             paths = restored.get_failure_paths()
             for p in paths:
                 print(p)
-            _, results = restored.get_failure_path_probabilities(water_levels=[3, 4])
+            _, results = restored.get_failure_path_probabilities(water_levels=WATER_LEVELS)
             for r in results:
                 print(r.cumulative_probabilities)
 
