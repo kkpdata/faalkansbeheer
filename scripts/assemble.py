@@ -117,8 +117,8 @@ def main() -> None:
     plot_tree = args.plot_tree
     beta_inf_sub = args.beta_inf_substitute
     a_vak = args.a_vak
-    dijktraject = args.dijktraject
     delta_L = args.delta_L
+    dijktraject = args.dijktraject
 
     # Read all scenarios and structure them into sections
     sections = {}
