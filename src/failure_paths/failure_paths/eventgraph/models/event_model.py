@@ -279,10 +279,10 @@ class EventTable(TableModel):
 
         if violations:
             sample = violations[:5]
-            special_ids_label = f"{ReservedPathId.INDIRECT_MECHANISM.value}/{ReservedPathId.OVERTOPPING.value}"
             msg = (
-                "Invalid fragility curve: Pf_h must be non-decreasing with increasing h; "
-                f"special Faalpad_ID {special_ids_label} must be monotone. "
+                "Invalid fragility curve: Pf_h must be monotone with increasing h "
+                "(regular Faalpad_ID values must be non-decreasing; reserved scenario "
+                "Faalpad_ID values may be non-decreasing or non-increasing but cannot change direction). "
                 f"Violations (showing up to 5): {sample}"
             )
             raise ValueError(cls._format_with_context(msg, context))

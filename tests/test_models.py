@@ -47,8 +47,9 @@ def test_event_table_non_monotone_fragility_raises() -> None:
             "Beta_h": [np.nan, np.nan, np.nan],
         }
     )
-    with pytest.raises(ValueError, match="non-decreasing"):
+    with pytest.raises(ValueError, match="non-decreasing") as exc_info:
         EventTable.from_dataframe(df_event)
+    assert "special Faalpad_ID" not in str(exc_info.value)
 
 
 def test_event_table_monotone_decreasing_fragility_allowed_for_special_faalpaden() -> None:
@@ -99,8 +100,7 @@ def test_event_table_mixed_direction_fragility_raises_for_special_faalpaden() ->
         }
     )
 
-    special_ids_label = f"{ReservedPathId.INDIRECT_MECHANISM.value}/{ReservedPathId.OVERTOPPING.value}"
-    with pytest.raises(ValueError, match=rf"special Faalpad_ID {special_ids_label} must be monotone"):
+    with pytest.raises(ValueError, match=r"cannot change direction"):
         EventTable.from_dataframe(df_event)
 
 
