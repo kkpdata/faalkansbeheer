@@ -6,5 +6,5 @@ eeg.plot(view=True, output_path="scripts/example_output/et_AW172.png", water_lev
 _, fcs = eeg.get_failure_path_probabilities(water_levels=[3, 4])
 
 for fc in fcs:
-    #print(fc.path)
+    # print(fc.path)
     print(fc.cumulative_probabilities)

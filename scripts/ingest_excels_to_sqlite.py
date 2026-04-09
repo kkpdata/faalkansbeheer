@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from failure_paths.eventgraph import EventGraphStore, ExcelEventGraph, SqliteEventGraph
 import numpy as np
+from failure_paths.eventgraph import EventGraphStore, ExcelEventGraph, SqliteEventGraph
 
 # ---------------------------------------------------------------------------
 # Configuration – adjust these values before running the script.

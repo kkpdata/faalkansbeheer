@@ -1,8 +1,9 @@
 r"""Python module met functies voor het assemblageprotocol."""
 
-import numpy as np
 from decimal import Decimal, getcontext
 from typing import cast
+
+import numpy as np
 
 
 # noinspection PyPep8Naming

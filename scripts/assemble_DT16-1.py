@@ -1,20 +1,22 @@
 import argparse
 import math
 from pathlib import Path
+
 import matplotlib.pyplot as plt
-import scipy.stats as sct
 import numpy as np
 import pandas as pd
-from pandas import DataFrame
+import scipy.stats as sct
 import tqdm.auto as tqdm
+from failure_paths.common.assemblage import bepaal_N_vak, combine_series
+from failure_paths.common.graph_betrouwbaarheidsindex import GraphBetaValuesSingleInteractive
 from failure_paths.common.interp import interpolate_beta_curve
 from failure_paths.common.prob import INTERPOLATION_BETA_CAP, beta_from_pf, pf_from_beta
-from failure_paths.common.assemblage import bepaal_N_vak, combine_series
+from failure_paths.common.traject_normering import TrajectNormering
 from failure_paths.reliability import IntegrationConfig, ReliabilityIntegrator
 from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
-from failure_paths.common.graph_betrouwbaarheidsindex import GraphBetaValuesSingleInteractive
-from failure_paths.common.traject_normering import TrajectNormering
+from pandas import DataFrame
+
 from failure_paths import ExcelEventGraph
 
 
@@ -39,9 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plot-beta", type=bool, default=True)
     parser.add_argument("--plot-tree", type=bool, default=False)
     parser.add_argument("--beta-inf-substitute", type=float, default=None)
-    parser.add_argument(
-        "--a-vak", type=float, default=0.5, help="Mechanismegevoelige fractie (a) voor bepaling N_vak"
-    )
+    parser.add_argument("--a-vak", type=float, default=0.5, help="Mechanismegevoelige fractie (a) voor bepaling N_vak")
     parser.add_argument(
         "--delta-L", type=float, default=50.0, help="Equivalente onafhankelijke lengte (dL) voor bepaling N_vak"
     )
@@ -105,8 +105,7 @@ def integrate_and_plot(
 
 
 def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
-
-    df = df.rename(columns={"M_VAN": 'm_start', "M_TOT": 'm_end', "dijkvaknummer": 'id'})
+    df = df.rename(columns={"M_VAN": "m_start", "M_TOT": "m_end", "dijkvaknummer": "id"})
     df["beta"] = df["Vak_Section_Pf"].apply(lambda x: -1 * sct.norm.ppf(x))
     df_beta_vak = df[["id", "m_start", "m_end", "beta"]]
 
@@ -114,7 +113,8 @@ def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
 
     traject_normering = TrajectNormering(traject_id=dijktraject, norm_is_ondergrens=True)
     GraphBetaValuesSingleInteractive(
-        traject_normering=traject_normering, df_beta_vak=df_beta_vak, beta_traject=beta_traject, export_dir=export_dir)
+        traject_normering=traject_normering, df_beta_vak=df_beta_vak, beta_traject=beta_traject, export_dir=export_dir
+    )
 
 
 def main() -> None:

@@ -1,4 +1,4 @@
-# Cheatsheet 
+# Cheatsheet
 
 ```bash
 pixi shell

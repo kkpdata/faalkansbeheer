@@ -1,6 +1,5 @@
 import scipy.stats as sct
 
-
 TRAJECT_PROPERTIES = {
     "16-1": {"signaleringswaarde": 100_000, "ondergrens": 30_000, "lengte": 15_059.41},
     "16-2": {"signaleringswaarde": 30_000, "ondergrens": 10_000, "lengte": 30972.09},
@@ -8,17 +7,16 @@ TRAJECT_PROPERTIES = {
 
 
 class TrajectNormering:
-    """ Gathers the traject id and calculates the traject normering
+    """Gathers the traject id and calculates the traject normering
     from the HRD-files.
     """
 
     def __init__(
-            self,
-            traject_id: str,  # Bijvoorbeeld '16-1'
-            norm_is_ondergrens: bool = True,
-            bovenrivierengebied: bool = True,
+        self,
+        traject_id: str,  # Bijvoorbeeld '16-1'
+        norm_is_ondergrens: bool = True,
+        bovenrivierengebied: bool = True,
     ):
-
         # Input
         self.bovenrivierengebied: bool = bovenrivierengebied
 
@@ -39,11 +37,9 @@ class TrajectNormering:
             self.n_dsn = 1 + (0.4 * self.traject_lengte) / 300.0
         # TODO Nu Must Klein: Eigenlijk hoofdletter N_dsn.
         # Maar ipv afkorting naam gebruiken?
-        self.faalkanseis_sign_dsn = (
-            self.w * self.faalkanseis_signaleringswaarde) / self.n_dsn
+        self.faalkanseis_sign_dsn = (self.w * self.faalkanseis_signaleringswaarde) / self.n_dsn
         self.beta_sign_dsn = sct.norm.ppf(self.faalkanseis_sign_dsn)
-        self.faalkanseis_ond_dsn = (
-            self.w * self.faalkanseis_ondergrens) / self.n_dsn
+        self.faalkanseis_ond_dsn = (self.w * self.faalkanseis_ondergrens) / self.n_dsn
         self.beta_ond_dsn = sct.norm.ppf(self.faalkanseis_ond_dsn)
         self.beta_categorie_grenzen = {
             "I": [-1 * sct.norm.ppf(self.faalkanseis_sign_dsn / 30), 50],
@@ -69,18 +65,18 @@ class TrajectNormering:
             ],
         }
         self.riskeer_categorie_grenzen = {
-            "+III": [-1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 1000),20],
+            "+III": [-1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 1000), 20],
             "+II": [
                 -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 100),
-                -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 1000)
+                -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 1000),
             ],
             "+I": [
                 -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 10),
-                -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 100)
+                -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 100),
             ],
             "0": [
                 -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde),
-                -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 10)
+                -1 * sct.norm.ppf(self.faalkanseis_signaleringswaarde / 10),
             ],
             "-I": [
                 -1 * sct.norm.ppf(self.faalkanseis_ondergrens),
@@ -88,7 +84,7 @@ class TrajectNormering:
             ],
             "-II": [
                 -1 * sct.norm.ppf(self.faalkanseis_ondergrens * 10),
-                -1 * sct.norm.ppf(self.faalkanseis_ondergrens)
+                -1 * sct.norm.ppf(self.faalkanseis_ondergrens),
             ],
             "-III": [2, -1 * sct.norm.ppf(self.faalkanseis_ondergrens * 10)],
         }
