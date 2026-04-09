@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Self
 
 import networkx as nx
 
 from .eventgraph import EventGraph
-from .models import EventTable, MetadataTable
+from .models import EventTable, FrequencyTable, MetadataTable
 from .sqlite_store import EventGraphStore, ScenarioInfo
 
 
@@ -16,6 +17,7 @@ class SqliteEventGraph(EventGraph):
     metadata: MetadataTable
     graph: nx.DiGraph
     graph_events: EventTable
+    freq_tables: dict[str, FrequencyTable]
     scenario_id: int | None = None
 
     @classmethod
@@ -62,7 +64,14 @@ class SqliteEventGraph(EventGraph):
             metadata = MetadataTable.from_records(store.read_dataframe("metadata", resolved_id))
             events = EventTable.from_records(store.read_dataframe("events", resolved_id))
             graph = store.read_graph(resolved_id)
-            return cls(metadata=metadata, graph=graph, graph_events=events, scenario_id=resolved_id)
+            freq_tables = store.read_frequency_tables(resolved_id)
+            return cls(
+                metadata=metadata,
+                graph=graph,
+                graph_events=events,
+                freq_tables=freq_tables,
+                scenario_id=resolved_id,
+            )
         finally:
             store.close()
 
@@ -89,5 +98,55 @@ class SqliteEventGraph(EventGraph):
         store = EventGraphStore(db_path, read_only=True)
         try:
             return store.list_scenarios(section=section)
+        finally:
+            store.close()
+
+    @staticmethod
+    def available_sections(db_path: str | Path) -> list[str]:
+        """List distinct sections stored in the SQLite database.
+
+        Parameters
+        ----------
+        db_path : str | Path
+            SQLite database path.
+
+        Returns
+        -------
+        list[str]
+            Distinct section names sorted in ascending order.
+        """
+        store = EventGraphStore(db_path, read_only=True)
+        try:
+            return store.list_sections()
+        finally:
+            store.close()
+
+    @staticmethod
+    def available_node_names(
+        db_path: str | Path,
+        *,
+        section: str | None = None,
+        node_types: Sequence[str] | None = None,
+    ) -> list[str]:
+        """List distinct node descriptions, optionally filtered by section and node type.
+
+        Parameters
+        ----------
+        db_path : str | Path
+            SQLite database path.
+        section : str | None, optional
+            Optional section filter. When ``None``, all sections are included.
+        node_types : Sequence[str] | None, optional
+            Optional node-type filter. When ``None``, all node types are
+            included. An empty sequence returns an empty list.
+
+        Returns
+        -------
+        list[str]
+            Distinct node descriptions sorted in ascending order.
+        """
+        store = EventGraphStore(db_path, read_only=True)
+        try:
+            return store.list_node_names(section=section, node_types=node_types)
         finally:
             store.close()

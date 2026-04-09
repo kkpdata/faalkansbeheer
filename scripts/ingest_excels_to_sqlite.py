@@ -49,6 +49,7 @@ def ingest_scenario(
         store.write_dataframe("metadata", metadata.to_required_records(), scenario_id, conn=conn)
         store.write_dataframe("events", graph_events.to_required_records(), scenario_id, conn=conn)
         store.write_graph(digraph, scenario_id, conn=conn)
+        store.write_frequency_tables(freq_tables, scenario_id, conn=conn)
 
 
 if __name__ == "__main__":

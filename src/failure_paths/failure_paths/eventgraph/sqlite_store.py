@@ -10,7 +10,9 @@ from pathlib import Path
 import networkx as nx
 import pandas as pd
 
-SCHEMA_VERSION = 1
+from .models import FrequencyTable
+
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,9 +105,22 @@ CREATE_STATEMENTS: tuple[str, ...] = (
         ) REFERENCES graph_nodes(scenario_id, faalpad_id, knoop_id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS frequency_tables (
+        scenario_id INTEGER NOT NULL,
+        table_order INTEGER NOT NULL,
+        table_name TEXT NOT NULL,
+        row_order INTEGER NOT NULL,
+        h REAL NOT NULL,
+        Pf_h REAL NOT NULL,
+        PRIMARY KEY (scenario_id, table_name, row_order),
+        FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_events_scenario ON events (scenario_id)",
     "CREATE INDEX IF NOT EXISTS idx_nodes_scenario ON graph_nodes (scenario_id)",
     "CREATE INDEX IF NOT EXISTS idx_edges_scenario ON graph_edges (scenario_id)",
+    "CREATE INDEX IF NOT EXISTS idx_frequency_scenario ON frequency_tables (scenario_id)",
 )
 
 
@@ -290,6 +305,68 @@ class EventGraphStore:
             for row in rows
         ]
 
+    def list_sections(self) -> list[str]:
+        """Return all distinct section names present in the store.
+
+        Returns
+        -------
+        list[str]
+            Distinct scenario section values sorted in ascending order.
+        """
+        conn = self.connect()
+        rows = conn.execute("SELECT DISTINCT section FROM scenarios ORDER BY section").fetchall()
+        return [str(row["section"]) for row in rows]
+
+    def list_node_names(
+        self,
+        *,
+        section: str | None = None,
+        node_types: Sequence[str] | None = None,
+    ) -> list[str]:
+        """Return distinct node descriptions, optionally filtered by section and node type.
+
+        Parameters
+        ----------
+        section : str | None, optional
+            Restrict results to scenarios belonging to the provided section.
+            When ``None``, node names from all sections are returned.
+        node_types : Sequence[str] | None, optional
+            Optional list of node types (for example ``"event_node"`` or
+            ``"failure_node"``) to include. When ``None``, all node types are
+            included. When an empty sequence is provided, an empty list is
+            returned.
+
+        Returns
+        -------
+        list[str]
+            Distinct node descriptions sorted in ascending order.
+        """
+        if node_types is not None and len(node_types) == 0:
+            return []
+
+        where_clauses = ["n.description IS NOT NULL"]
+        params: list[object] = []
+
+        if section is not None:
+            where_clauses.append("s.section = ?")
+            params.append(section)
+
+        if node_types is not None:
+            placeholders = ", ".join(["?"] * len(node_types))
+            where_clauses.append(f"n.node_type IN ({placeholders})")
+            params.extend(node_types)
+
+        where_sql = " AND ".join(where_clauses)
+        query = f"""
+            SELECT DISTINCT n.description
+            FROM graph_nodes AS n
+            JOIN scenarios AS s ON s.id = n.scenario_id
+            WHERE {where_sql}
+            ORDER BY n.description
+        """
+        rows = self.connect().execute(query, params).fetchall()
+        return [str(row["description"]) for row in rows]
+
     def delete_scenario_rows(
         self,
         scenario_id: int,
@@ -364,6 +441,103 @@ class EventGraphStore:
         nodes_df = self.read_dataframe("graph_nodes", scenario_id)
         edges_df = self.read_dataframe("graph_edges", scenario_id)
         return deserialize_graph(nodes_df, edges_df)
+
+    def write_frequency_tables(
+        self,
+        freq_tables: dict[str, FrequencyTable],
+        scenario_id: int,
+        *,
+        conn: sqlite3.Connection | None = None,
+        replace: bool = True,
+    ) -> None:
+        """Persist frequency tables for ``scenario_id`` while preserving table/row order.
+
+        Parameters
+        ----------
+        freq_tables : dict[str, FrequencyTable]
+            Mapping of frequency-table names to validated table payloads.
+        scenario_id : int
+            Scenario identifier to associate with every frequency row.
+        conn : sqlite3.Connection | None, optional
+            Existing transaction connection. When ``None``, a new transaction is
+            opened for this operation.
+        replace : bool, optional
+            When ``True``, existing frequency rows for ``scenario_id`` are
+            deleted before writing new rows.
+        """
+        if conn is None:
+            with self.transaction() as tx_conn:
+                self.write_frequency_tables(
+                    freq_tables,
+                    scenario_id,
+                    conn=tx_conn,
+                    replace=replace,
+                )
+            return
+
+        if replace:
+            conn.execute("DELETE FROM frequency_tables WHERE scenario_id = ?", (scenario_id,))
+
+        if not freq_tables:
+            return
+
+        rows: list[tuple[int, int, str, int, float, float]] = []
+        for table_order, (table_name, table) in enumerate(freq_tables.items()):
+            table_df = table.to_required_records().reset_index(drop=True)
+            for row_order, row in enumerate(table_df.itertuples(index=False)):
+                rows.append(
+                    (
+                        scenario_id,
+                        table_order,
+                        str(table_name),
+                        row_order,
+                        float(row.h),
+                        float(row.Pf_h),
+                    )
+                )
+
+        if not rows:
+            return
+
+        conn.executemany(
+            """
+            INSERT INTO frequency_tables (
+                scenario_id, table_order, table_name, row_order, h, Pf_h
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+
+    def read_frequency_tables(self, scenario_id: int) -> dict[str, FrequencyTable]:
+        """Read and reconstruct frequency tables for ``scenario_id``.
+
+        Parameters
+        ----------
+        scenario_id : int
+            Scenario identifier to read from the ``frequency_tables`` relation.
+
+        Returns
+        -------
+        dict[str, FrequencyTable]
+            Frequency tables keyed by table name in stored table-order order.
+        """
+        query = """
+            SELECT table_name, table_order, row_order, h, Pf_h
+            FROM frequency_tables
+            WHERE scenario_id = ?
+            ORDER BY table_order, row_order
+        """
+        df_sql = pd.read_sql_query(query, self.connect(), params=(scenario_id,))
+        if df_sql.empty:
+            return {}
+
+        freq_tables: dict[str, FrequencyTable] = {}
+        for table_name, group in df_sql.groupby("table_name", sort=False):
+            table_df = group.loc[:, ["h", "Pf_h"]].reset_index(drop=True)
+            freq_tables[str(table_name)] = FrequencyTable.from_records(table_df)
+
+        return freq_tables
 
 
 def serialize_graph(graph: nx.DiGraph) -> tuple[pd.DataFrame, pd.DataFrame]:

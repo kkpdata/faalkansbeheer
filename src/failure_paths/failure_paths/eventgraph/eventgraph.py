@@ -11,13 +11,14 @@ import graphviz
 import networkx
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..common.prob import beta_from_pf, cumulative_beta_equivalent_ot, pf_from_beta
 from .models import (
     EventTable,
     FailurePath,
     FailurePathProbabilities,
+    FrequencyTable,
     MetadataTable,
 )
 
@@ -29,6 +30,7 @@ class EventGraph(BaseModel, ABC):
     metadata: MetadataTable
     graph: networkx.DiGraph
     graph_events: EventTable
+    freq_tables: dict[str, FrequencyTable] = Field(default_factory=dict)
 
     @classmethod
     @abstractmethod
