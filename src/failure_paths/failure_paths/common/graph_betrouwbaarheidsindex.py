@@ -23,7 +23,7 @@ def _add_beta_per_uittredepunt_points(self, df_for_graph: DataFrame, mask, name:
             x=df_for_graph.loc[mask, "metrering"],
             y=df_for_graph.loc[mask, "beta"],
             mode="markers",
-            marker=dict(symbol="circle", size=7, color=color),
+            marker={"symbol": "circle", "size": 7, "color": color},
             name=name,
             customdata=df_for_graph.loc[mask, ["uittredepunt_id", "beta", "metrering"]],
             hovertemplate=(
@@ -38,15 +38,13 @@ def _add_beta_per_uittredepunt_points(self, df_for_graph: DataFrame, mask, name:
 def _add_beta_per_uittredepunt_indication_above_plotting_range(
     self, df_for_graph: DataFrame, mask, name: str, color: str, value: bool
 ):
-    """Indication to user that there are Beta results plotted outside
-    the plotting range. In this case above range.
-    """
+    """Indication to user that there are Beta results plotted outside the plotting range. In this case above range."""
     self.fig.add_trace(
         go.Scatter(
             x=df_for_graph.loc[mask, "metrering"],
             y=[BETA_MAX - 0.5] * mask.sum(),
             mode="markers",
-            marker=dict(symbol="triangle-up", size=7, color=color),
+            marker={"symbol": "triangle-up", "size": 7, "color": color},
             name=name + " above plotted range",
             customdata=df_for_graph.loc[mask, ["uittredepunt_id", "beta", "metrering"]],
             hovertemplate=(
@@ -61,15 +59,13 @@ def _add_beta_per_uittredepunt_indication_above_plotting_range(
 def _add_beta_per_uittredepunt_indication_below_plotting_range(
     self, df_for_graph: DataFrame, mask, name: str, color: str, value: bool
 ):
-    """Indication to user that there are Beta results plotted outside
-    the plotting range. In this case below range.
-    """
+    """Indication to user that there are Beta results plotted outside the plotting range. In this case below range."""
     self.fig.add_trace(
         go.Scatter(
             x=df_for_graph.loc[mask, "metrering"],
             y=[BETA_MIN + 0.1] * mask.sum(),
             mode="markers",
-            marker=dict(symbol="triangle-down", size=7, color=color),
+            marker={"symbol": "triangle-down", "size": 7, "color": color},
             name=name + " below plotted range",
             customdata=df_for_graph.loc[mask, ["uittredepunt_id", "beta", "metrering"]],
             hovertemplate=(
@@ -96,6 +92,14 @@ CATEGORY_LABELS = ["+III", "+II", "+I", "0", "-I", "-II", "-III"]
 
 
 class GraphBetaValuesSingleInteractive:
+    """Interactive beta graph
+
+    :param df_beta_vak: Optional DataFrame with columns vak_id,
+    :param beta_traject:
+    :param traject_normering:
+    :param export_dir:
+    """
+
     def __init__(
         self,
         traject_normering: TrajectNormering,
@@ -103,13 +107,6 @@ class GraphBetaValuesSingleInteractive:
         beta_traject: float | None = None,
         export_dir: str | None = None,
     ):
-        """
-
-        :param df_beta_vak: Optional DataFrame with columns vak_id,
-        :param beta_traject:
-        :param traject_normering:
-        :param export_dir:
-        """
         # Input
         self.df_beta_vak: DataFrame | None = df_beta_vak
         self.beta_traject: float | None = beta_traject
@@ -143,52 +140,52 @@ class GraphBetaValuesSingleInteractive:
 
         # Add 'Vak ID'-label
         self.annotation_vak.append(
-            dict(
-                x=0.5,
-                y=np.log10(2.1),
-                text="Vak ID:",
-                showarrow=False,
-                xanchor="left",
-                yanchor="bottom",
-                font=dict(color="black"),
-            )
+            {
+                "x": 0.5,
+                "y": np.log10(2.1),
+                "text": "Vak ID:",
+                "showarrow": False,
+                "xanchor": "left",
+                "yanchor": "bottom",
+                "font": {"color": "black"},
+            }
         )
 
         # Add vertical lines and vak label
         if self.df_beta_vak is not None:
             for _, vak in self.df_beta_vak.iterrows():
                 self.vak_lines.append(
-                    dict(
-                        x0=vak["m_start"],
-                        x1=vak["m_start"],
-                        y0=0,
-                        y1=1,
-                        xref="x",
-                        yref="paper",
-                        line=dict(color="black", width=1),
-                    )
+                    {
+                        "x0": vak["m_start"],
+                        "x1": vak["m_start"],
+                        "y0": 0,
+                        "y1": 1,
+                        "xref": "x",
+                        "yref": "paper",
+                        "line": {"color": "black", "width": 1},
+                    }
                 )
                 self.vak_lines.append(
-                    dict(
-                        x0=vak["m_end"],
-                        x1=vak["m_end"],
-                        y0=0,
-                        y1=1,
-                        xref="x",
-                        yref="paper",
-                        line=dict(color="black", width=1),
-                    )
+                    {
+                        "x0": vak["m_end"],
+                        "x1": vak["m_end"],
+                        "y0": 0,
+                        "y1": 1,
+                        "xref": "x",
+                        "yref": "paper",
+                        "line": {"color": "black", "width": 1},
+                    }
                 )
                 self.annotation_vak.append(
-                    dict(
-                        x=(vak["m_start"] + vak["m_end"]) / 2,
-                        y=np.log10(2),
-                        text=vak["id"],
-                        showarrow=False,
-                        xanchor="center",
-                        yanchor="bottom",
-                        font=dict(color="black"),
-                    )
+                    {
+                        "x": (vak["m_start"] + vak["m_end"]) / 2,
+                        "y": np.log10(2),
+                        "text": vak["id"],
+                        "showarrow": False,
+                        "xanchor": "center",
+                        "yanchor": "bottom",
+                        "font": {"color": "black"},
+                    }
                 )
 
         # Add category colors
@@ -202,7 +199,7 @@ class GraphBetaValuesSingleInteractive:
                     y=[cg[grens][0]] * len(x_line),
                     name=grens,
                     mode="lines",
-                    line=dict(color="black", width=0.5),
+                    line={"color": "black", "width": 0.5},
                     hoverinfo="skip",
                     showlegend=False,
                 )
@@ -215,7 +212,7 @@ class GraphBetaValuesSingleInteractive:
                     name=grens,
                     mode="lines",
                     fill="tonexty",
-                    line=dict(width=0),  # geen bovenrand zichtbaar
+                    line={"width": 0},  # geen bovenrand zichtbaar
                     fillcolor=CATEGORY_COLORS[i % CATEGORY_COLORS.__len__()],  # kleur uit lijst
                     hoverinfo="skip",
                     showlegend=False,
@@ -223,16 +220,16 @@ class GraphBetaValuesSingleInteractive:
             )
             # Labels bij de ondergrens
             self.annotation_label.append(
-                dict(
-                    x=x_line.max(),
-                    y=(np.log10(cg[grens][0]) + np.log10(cg[grens][1])) / 2,
-                    text=CATEGORY_LABELS[i % CATEGORY_LABELS.__len__()],
-                    showarrow=False,
-                    xanchor="left",
-                    yanchor="middle",
-                    font=dict(color="black", size=10),
-                    align="right",
-                )
+                {
+                    "x": x_line.max(),
+                    "y": (np.log10(cg[grens][0]) + np.log10(cg[grens][1])) / 2,
+                    "text": CATEGORY_LABELS[i % CATEGORY_LABELS.__len__()],
+                    "showarrow": False,
+                    "xanchor": "left",
+                    "yanchor": "middle",
+                    "font": {"color": "black", "size": 10},
+                    "align": "right",
+                }
             )
 
     def _add_beta_per_vak(self):
@@ -247,7 +244,7 @@ class GraphBetaValuesSingleInteractive:
                     x=[row["m_start"], row["m_end"]],
                     y=[row["beta"], row["beta"]],
                     mode="lines",
-                    line=dict(color="black", width=2.5),
+                    line={"color": "black", "width": 2.5},
                     name="Beta vakken",
                     legendgroup="Beta vakken",
                     showlegend=first,
@@ -269,7 +266,7 @@ class GraphBetaValuesSingleInteractive:
                     x=[(row["m_start"] + row["m_end"]) / 2],
                     y=[BETA_MAX - 0.1],
                     mode="markers",
-                    marker=dict(color="black", symbol="triangle-up", size=9),
+                    marker={"color": "black", "symbol": "triangle-up", "size": 9},
                     name="Beta vakken (above plotted range)",
                     customdata=[[row["id"], row["beta"]]],
                     hovertemplate=hovertemplate,
@@ -288,7 +285,7 @@ class GraphBetaValuesSingleInteractive:
                     x=[(row["m_start"] + row["m_end"]) / 2],
                     y=[BETA_MIN + 0.1],
                     mode="markers",
-                    marker=dict(color="black", symbol="triangle-down", size=9),
+                    marker={"color": "black", "symbol": "triangle-down", "size": 9},
                     name="Beta vakken (below plotted range)",
                     customdata=[[row["id"], row["beta"]]],
                     legendgroup="Beta vakken",
@@ -304,7 +301,7 @@ class GraphBetaValuesSingleInteractive:
                 x=[self.m_start, self.m_end],
                 y=[self.beta_traject, self.beta_traject],
                 mode="lines",
-                line=dict(color="black", width=2.5, dash="dash"),
+                line={"color": "black", "width": 2.5, "dash": "dash"},
                 name="Beta traject",
                 showlegend=True,
                 customdata=[[self.beta_traject]] * 2,
@@ -316,44 +313,53 @@ class GraphBetaValuesSingleInteractive:
         annotation = self.annotation_vak + self.annotation_label
         self.fig.update_layout(
             title="Betrouwbaarheidsindex",
-            xaxis=dict(
-                title="Metrering", type="linear", range=[0, self.m_end], showgrid=True, gridwidth=0.5, gridcolor="gray"
-            ),
-            yaxis=dict(
-                title="Betrouwbaarheidsindex β [-]",
-                type="log",
-                range=[np.log10(2), np.log10(10)],
-                showgrid=True,
-                gridwidth=0.5,
-                gridcolor="gray",
-                tickmode="array",
-                tickvals=[2, 3, 4, 5, 6, 7, 8, 9, 10],
-                ticktext=[2, 3, 4, 5, 6, 7, 8, 9, 10],
-            ),
-            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+            xaxis={
+                "title": "Metrering",
+                "type": "linear",
+                "range": [0, self.m_end],
+                "showgrid": True,
+                "gridwidth": 0.5,
+                "gridcolor": "gray",
+            },
+            yaxis={
+                "title": "Betrouwbaarheidsindex β [-]",
+                "type": "log",
+                "range": [np.log10(2), np.log10(10)],
+                "showgrid": True,
+                "gridwidth": 0.5,
+                "gridcolor": "gray",
+                "tickmode": "array",
+                "tickvals": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+                "ticktext": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+            },
+            legend={"yanchor": "top", "y": 0.99, "xanchor": "left", "x": 0.01},
             annotations=annotation,
             shapes=self.vak_lines,
         )
         # Toggles for annotations
         self.fig.update_layout(
             updatemenus=[
-                dict(
-                    type="buttons",
-                    direction="right",
-                    buttons=[
-                        dict(
-                            label="Show annotations",
-                            method="relayout",
-                            args=["annotations", self.annotation_vak + self.annotation_label],
-                        ),
-                        dict(label="Hide annotations", method="relayout", args=["annotations", self.annotation_label]),
-                        dict(label="Show vlines", method="relayout", args=["shapes", self.vak_lines]),
-                        dict(label="Hide vlines", method="relayout", args=["shapes", []]),
+                {
+                    "type": "buttons",
+                    "direction": "right",
+                    "buttons": [
+                        {
+                            "label": "Show annotations",
+                            "method": "relayout",
+                            "args": ["annotations", self.annotation_vak + self.annotation_label],
+                        },
+                        {
+                            "label": "Hide annotations",
+                            "method": "relayout",
+                            "args": ["annotations", self.annotation_label],
+                        },
+                        {"label": "Show vlines", "method": "relayout", "args": ["shapes", self.vak_lines]},
+                        {"label": "Hide vlines", "method": "relayout", "args": ["shapes", []]},
                     ],
-                    x=0.5,
-                    y=1.15,
-                    xanchor="center",
-                )
+                    "x": 0.5,
+                    "y": 1.15,
+                    "xanchor": "center",
+                }
             ]
         )
 

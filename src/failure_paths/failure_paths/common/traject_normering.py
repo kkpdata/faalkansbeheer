@@ -7,9 +7,7 @@ TRAJECT_PROPERTIES = {
 
 
 class TrajectNormering:
-    """Gathers the traject id and calculates the traject normering
-    from the HRD-files.
-    """
+    """Gathers the traject id and calculates the traject normering from the HRD-files."""
 
     def __init__(
         self,
