@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import networkx as nx
+import numpy as np
 import pandas as pd
 
 from .models import FrequencyTable
@@ -320,41 +321,59 @@ class EventGraphStore:
     def list_node_names(
         self,
         *,
-        section: str | None = None,
-        node_types: Sequence[str] | None = None,
+        sections: str | Sequence[str] | None = None,
+        node_types: str | Sequence[str] | None = None,
     ) -> list[str]:
-        """Return distinct node descriptions, optionally filtered by section and node type.
+        """Return distinct node descriptions, optionally filtered by section(s) and node type.
 
         Parameters
         ----------
-        section : str | None, optional
-            Restrict results to scenarios belonging to the provided section.
-            When ``None``, node names from all sections are returned.
-        node_types : Sequence[str] | None, optional
-            Optional list of node types (for example ``"event_node"`` or
-            ``"failure_node"``) to include. When ``None``, all node types are
-            included. When an empty sequence is provided, an empty list is
-            returned.
+        sections : str | Sequence[str] | None, optional
+            Optional section filter. Accepts a single section string, a
+            sequence of section strings, or ``None`` for all sections. An empty
+            sequence returns an empty list.
+        node_types : str | Sequence[str] | None, optional
+            Optional node-type filter. Accepts a single node-type string, a
+            sequence of node-type strings, or ``None`` for all node types. An
+            empty sequence returns an empty list.
 
         Returns
         -------
         list[str]
             Distinct node descriptions sorted in ascending order.
         """
-        if node_types is not None and len(node_types) == 0:
-            return []
+        section_values: list[str] | None
+        if sections is None:
+            section_values = None
+        elif isinstance(sections, str):
+            section_values = [sections]
+        else:
+            section_values = list(dict.fromkeys(sections))
+            if len(section_values) == 0:
+                return []
+
+        node_type_values: list[str] | None
+        if node_types is None:
+            node_type_values = None
+        elif isinstance(node_types, str):
+            node_type_values = [node_types]
+        else:
+            node_type_values = list(dict.fromkeys(node_types))
+            if len(node_type_values) == 0:
+                return []
 
         where_clauses = ["n.description IS NOT NULL"]
         params: list[object] = []
 
-        if section is not None:
-            where_clauses.append("s.section = ?")
-            params.append(section)
+        if section_values is not None:
+            placeholders = ", ".join(["?"] * len(section_values))
+            where_clauses.append(f"s.section IN ({placeholders})")
+            params.extend(section_values)
 
-        if node_types is not None:
-            placeholders = ", ".join(["?"] * len(node_types))
+        if node_type_values is not None:
+            placeholders = ", ".join(["?"] * len(node_type_values))
             where_clauses.append(f"n.node_type IN ({placeholders})")
-            params.extend(node_types)
+            params.extend(node_type_values)
 
         where_sql = " AND ".join(where_clauses)
         query = f"""
@@ -366,6 +385,91 @@ class EventGraphStore:
         """
         rows = self.connect().execute(query, params).fetchall()
         return [str(row["description"]) for row in rows]
+
+    def fetch_selected_scenario_nodes(
+        self,
+        *,
+        sections: Sequence[str],
+        node_names: Sequence[str],
+    ) -> pd.DataFrame:
+        """Fetch scenario/node rows including scenario weights.
+
+        Parameters
+        ----------
+        sections : Sequence[str]
+            Section filters applied to ``scenarios.section``.
+        node_names : Sequence[str]
+            Node-name filters applied to ``graph_nodes.description``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Rows with ``scenario_id``, ``section``, ``node_name``,
+            ``faalpad_id``, ``knoop_id``, and ``scenario_weight``.
+        """
+        section_values = list(dict.fromkeys(sections))
+        node_values = list(dict.fromkeys(node_names))
+        columns = ["scenario_id", "section", "node_name", "faalpad_id", "knoop_id", "scenario_weight"]
+        if len(section_values) == 0 or len(node_values) == 0:
+            return pd.DataFrame(columns=columns)
+
+        section_placeholders = ", ".join("?" for _ in section_values)
+        node_placeholders = ", ".join("?" for _ in node_values)
+        query = f"""
+            SELECT
+                s.id AS scenario_id,
+                s.section AS section,
+                n.description AS node_name,
+                n.faalpad_id AS faalpad_id,
+                n.knoop_id AS knoop_id,
+                m.ScenarioKans AS scenario_weight
+            FROM scenarios AS s
+            JOIN metadata AS m
+                ON m.scenario_id = s.id
+            JOIN graph_nodes AS n
+                ON n.scenario_id = s.id
+            WHERE s.section IN ({section_placeholders})
+              AND n.description IN ({node_placeholders})
+            ORDER BY
+                s.section,
+                s.id,
+                n.description,
+                n.faalpad_id,
+                n.knoop_id
+        """
+        params = [*section_values, *node_values]
+        return pd.read_sql_query(query, self.connect(), params=params)
+
+    def fetch_water_levels_for_scenarios(self, scenario_ids: Sequence[int]) -> np.ndarray:
+        """Fetch sorted unique water levels for selected scenarios.
+
+        Parameters
+        ----------
+        scenario_ids : Sequence[int]
+            Scenario identifiers used to filter ``events`` rows.
+
+        Returns
+        -------
+        numpy.ndarray
+            Sorted finite ``h`` values as a 1D float array.
+        """
+        scenario_values = list(dict.fromkeys(int(scenario_id) for scenario_id in scenario_ids))
+        if len(scenario_values) == 0:
+            return np.array([], dtype=float)
+
+        placeholders = ", ".join("?" for _ in scenario_values)
+        query = f"""
+            SELECT DISTINCT h
+            FROM events
+            WHERE scenario_id IN ({placeholders})
+            ORDER BY h
+        """
+        df_h = pd.read_sql_query(query, self.connect(), params=scenario_values)
+        if df_h.empty:
+            return np.array([], dtype=float)
+
+        h_values = pd.to_numeric(df_h["h"], errors="coerce").to_numpy(dtype=float)
+        return h_values[np.isfinite(h_values)]
 
     def delete_scenario_rows(
         self,

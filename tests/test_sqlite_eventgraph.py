@@ -215,12 +215,12 @@ def test_store_and_sqlite_eventgraph_can_list_sections_and_node_names(tmp_path: 
 
         assert store.list_sections() == ["A", "B"]
         assert store.list_node_names() == ["event1", "event2", "failure", "failure2", "start"]
-        assert store.list_node_names(section="A") == ["event1", "failure", "start"]
-        assert store.list_node_names(section="B", node_types=["event_node"]) == ["event2"]
-        assert store.list_node_names(section="B", node_types=[]) == []
+        assert store.list_node_names(sections="A") == ["event1", "failure", "start"]
+        assert store.list_node_names(sections="B", node_types="event_node") == ["event2"]
+        assert store.list_node_names(sections="B", node_types=[]) == []
 
     assert SqliteEventGraph.available_sections(db_path) == ["A", "B"]
-    assert SqliteEventGraph.available_node_names(db_path, section="A", node_types=["failure_node"]) == ["failure"]
+    assert SqliteEventGraph.available_node_names(db_path, sections="A", node_types="failure_node") == ["failure"]
 
 
 def test_sqlite_eventgraph_preserves_probabilities_and_attributes(tmp_path: Path) -> None:

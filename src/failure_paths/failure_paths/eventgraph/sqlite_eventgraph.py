@@ -125,20 +125,21 @@ class SqliteEventGraph(EventGraph):
     def available_node_names(
         db_path: str | Path,
         *,
-        section: str | None = None,
-        node_types: Sequence[str] | None = None,
+        sections: str | Sequence[str] | None = None,
+        node_types: str | Sequence[str] | None = None,
     ) -> list[str]:
-        """List distinct node descriptions, optionally filtered by section and node type.
+        """List distinct node descriptions, optionally filtered by section(s) and node type.
 
         Parameters
         ----------
         db_path : str | Path
             SQLite database path.
-        section : str | None, optional
-            Optional section filter. When ``None``, all sections are included.
-        node_types : Sequence[str] | None, optional
-            Optional node-type filter. When ``None``, all node types are
-            included. An empty sequence returns an empty list.
+        sections : str | Sequence[str] | None, optional
+            Optional section filter. Accepts a single section string, a
+            sequence of section strings, or ``None`` for all sections.
+        node_types : str | Sequence[str] | None, optional
+            Optional node-type filter. Accepts a single node-type string, a
+            sequence of node-type strings, or ``None`` for all node types.
 
         Returns
         -------
@@ -147,6 +148,9 @@ class SqliteEventGraph(EventGraph):
         """
         store = EventGraphStore(db_path, read_only=True)
         try:
-            return store.list_node_names(section=section, node_types=node_types)
+            return store.list_node_names(
+                sections=sections,
+                node_types=node_types,
+            )
         finally:
             store.close()
