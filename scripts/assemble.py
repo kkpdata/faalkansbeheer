@@ -1,5 +1,5 @@
 import argparse
-import math
+from contextlib import nullcontext
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -17,7 +17,7 @@ from failure_paths.reliability.curves import FragilityCurve, HazardCurve
 from failure_paths.reliability.plotting import plot_failure_histogram, plot_integration_diagnostics_1d
 from pandas import DataFrame
 
-from failure_paths import ExcelEventGraph
+from failure_paths import EventGraph, EventGraphStore, ExcelEventGraph
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +38,12 @@ def parse_args() -> argparse.Namespace:
         "--delta-L", type=float, default=50.0, help="Equivalente onafhankelijke lengte (dL) voor bepaling N_vak"
     )
     parser.add_argument("--dijktraject", type=str, default="16-1")
+    parser.add_argument(
+        "--sqlite-db",
+        type=Path,
+        default=None,
+        help="Optional SQLite database path to persist ingested scenario eventgraphs during assemble.",
+    )
     return parser.parse_args()
 
 
@@ -109,6 +115,29 @@ def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
     )
 
 
+def _save_scenario_to_sqlite(
+    store: EventGraphStore,
+    eeg: ExcelEventGraph,
+    excel_path: Path,
+    sheet_name: str,
+    section_name: str,
+) -> None:
+    start_node_label = f"{excel_path.stem}: {sheet_name}"
+    with store.transaction() as conn:
+        scenario_id = store.upsert_scenario(
+            section=section_name,
+            source_path=str(excel_path.resolve()),
+            sheet_name=sheet_name,
+            start_node_label=start_node_label,
+            tags=None,
+            conn=conn,
+        )
+        store.write_dataframe("metadata", eeg.metadata.to_required_records(), scenario_id, conn=conn)
+        store.write_dataframe("events", eeg.graph_events.to_required_records(), scenario_id, conn=conn)
+        store.write_graph(eeg.graph, scenario_id, conn=conn)
+        store.write_frequency_tables(eeg.freq_tables, scenario_id, conn=conn)
+
+
 def main() -> None:
     args = parse_args()
     hr_path = args.hr_path
@@ -123,28 +152,46 @@ def main() -> None:
     a_vak = args.a_vak
     delta_L = args.delta_L
     dijktraject = args.dijktraject
+    sqlite_db = args.sqlite_db
 
     # Read all scenarios and structure them into sections
     sections = {}
     meta_cols = []
-    for p in dir_traject.rglob("*.xlsx", case_sensitive=False):
-        if p.is_file() and not p.name.startswith("~$"):
-            try:
-                eeg = ExcelEventGraph.load(p, scenario_name)
-            except Exception as e:
-                print(f"Error while loading '{p}':")
-                print(e)
-                continue
-            meta_row = eeg.metadata.df.iloc[0]
-            section_name = f"{meta_row.TRAJECT_ID}_{meta_row.dijkvaknummer:03d}_{meta_row.Vaknaam}"
-            if section_name not in sections:
-                sections[section_name] = {}
-            sections[section_name][meta_row.Ondergrondscenario] = (
-                eeg,
-                meta_row.ScenarioKans,
-                meta_row.HR_locatie,
-            )
-            meta_cols = pd.unique(np.array(meta_cols + eeg.metadata.df.columns.tolist())).tolist()
+    store_ctx = EventGraphStore(sqlite_db) if sqlite_db is not None else nullcontext(None)
+    with store_ctx as store:
+        for p in dir_traject.rglob("*.xlsx", case_sensitive=False):
+            if p.is_file() and not p.name.startswith("~$"):
+                try:
+                    eeg = ExcelEventGraph.load(p, scenario_name)
+                except Exception as e:
+                    print(f"Error while loading '{p}':")
+                    print(e)
+                    continue
+                meta_row = eeg.metadata.df.iloc[0]
+                section_name = f"{meta_row.TRAJECT_ID}_{meta_row.dijkvaknummer:03d}_{meta_row.Vaknaam}"
+
+                if store is not None:
+                    try:
+                        _save_scenario_to_sqlite(
+                            store,
+                            eeg,
+                            p,
+                            scenario_name,
+                            section_name,
+                        )
+                    except Exception as exc:
+                        raise RuntimeError(
+                            f"Failed to persist scenario to SQLite for workbook '{p}', sheet '{scenario_name}'"
+                        ) from exc
+
+                if section_name not in sections:
+                    sections[section_name] = {}
+                sections[section_name][meta_row.Ondergrondscenario] = (
+                    eeg,
+                    meta_row.ScenarioKans,
+                    meta_row.HR_locatie,
+                )
+                meta_cols = pd.unique(np.array(meta_cols + eeg.metadata.df.columns.tolist())).tolist()
 
     print(f"Parsed {len(sections)} sections")
     # Parse scenarios grouped by section
@@ -169,7 +216,7 @@ def main() -> None:
         fig_path = write_path / "figures"
         fig_path.mkdir(parents=True, exist_ok=True)
 
-        fc_section = []
+        fc_section_curves = []
         hr_locs = []
         scen_probs = []
         df_plot_fc = {"water level": water_levels}
@@ -185,7 +232,7 @@ def main() -> None:
             df_plot_fc[scen_name] = pfs
 
             # Add weighted scenario curve to section collection
-            fc_section.append(pfs[:, np.newaxis] * scen_prob)
+            fc_section_curves.append(pfs)
             hr_locs.append(hr_loc)
             scen_probs.append(scen_prob)
 
@@ -273,15 +320,15 @@ def main() -> None:
         if len(hr_locs) != 1:
             raise ValueError("Multiple HR locations used for scenarios in a single section (can only be one)")
 
-        # Assert that the scenario probabilities sum to 1
-        if not np.isclose(sum(scen_probs), 1.0):
-            raise ValueError(
-                f"Scenario probabilities must sum to 1 for section '{section_name}'. Got {sum(scen_probs)}"
-            )
-
         # Get combined section fragility curve
-        fc_section = np.hstack(fc_section)
-        fc_section = np.array([math.fsum(row) for row in fc_section], dtype=float)
+        try:
+            fc_section = EventGraph.aggregate_weighted_scenario_curves(
+                fc_section_curves,
+                scen_probs,
+                require_sum_one=True,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Failed to aggregate weighted scenario curves for section '{section_name}'.") from exc
         df_plot_fc["combined"] = fc_section
 
         # Integrate combined section fragility curve
