@@ -49,7 +49,7 @@ def _form_reference_result(
     s_distribution: ot.Distribution,
 ) -> tuple[float, np.ndarray]:
     marginals = {"R": r_distribution, "S": s_distribution}
-    distribution = ot.ComposedDistribution(
+    distribution = ot.JointDistribution(
         list(marginals.values()),
         ot.IndependentCopula(len(marginals)),
     )
