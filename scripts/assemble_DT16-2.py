@@ -351,7 +351,7 @@ def main() -> None:
     df_result1["Traject_Pf_bovengrens"] = bovengrens_pf
     df_result1["Traject_Pf_ondergrens"] = ondergrens_pf
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
-    
+
     df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result_{timestamp}.xlsx", index=False)
 
     export_dir = output_folder / dir_traject.name

@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 import scipy.stats as sct
 import tqdm.auto as tqdm
-from failure_paths.common.assemblage import bepaal_N_vak, combine_series
+
+# from failure_paths.common.assemblage import bepaal_N_vak, combine_series
 from failure_paths.common.graph_betrouwbaarheidsindex import GraphBetaValuesSingleInteractive
 from failure_paths.common.interp import interpolate_beta_curve
 from failure_paths.common.prob import INTERPOLATION_BETA_CAP, beta_from_pf, pf_from_beta
@@ -149,9 +150,9 @@ def main() -> None:
     plot_beta = args.plot_beta
     plot_tree = args.plot_tree
     beta_inf_sub = args.beta_inf_substitute
-    a_vak = args.a_vak
-    delta_L = args.delta_L
-    dijktraject = args.dijktraject
+    # a_vak = args.a_vak
+    # delta_L = args.delta_L
+    # dijktraject = args.dijktraject
     sqlite_db = args.sqlite_db
 
     # Read all scenarios and structure them into sections
@@ -391,8 +392,8 @@ def main() -> None:
 
     df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result.xlsx", index=False)
 
-    export_dir = output_folder / dir_traject.name
-    #_export_graph(df=df_result1, export_dir=export_dir, dijktraject=dijktraject)
+    # export_dir = output_folder / dir_traject.name
+    # _export_graph(df=df_result1, export_dir=export_dir, dijktraject=dijktraject)
 
 
 if __name__ == "__main__":

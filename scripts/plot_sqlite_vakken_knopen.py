@@ -357,12 +357,7 @@ def build_plot_dataframes(
         return float(merged[0])
 
     # 4) Produce the final section/node curves and reshape to plotting-friendly wide frames.
-    df_weighted = (
-        weighted_df.groupby(group_cols, sort=False)
-        .apply(_aggregate_group)
-        .rename("pf_h")
-        .reset_index()
-    )
+    df_weighted = weighted_df.groupby(group_cols, sort=False).apply(_aggregate_group).rename("pf_h").reset_index()
 
     df_weighted["column_label"] = df_weighted.apply(
         lambda row: f"{row['section']} | {row['node_name']} ({int(row['faalpad_id'])},{int(row['knoop_id'])})",
