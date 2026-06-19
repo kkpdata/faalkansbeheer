@@ -52,6 +52,17 @@ fc_comb, results = graph.get_failure_path_probabilities(water_levels=[3, 4])
 
 `graph.plot()` renders the event tree to an image file. `get_failure_path_probabilities()` returns `fc_comb`, the combined scenario fragility curve (`Pf`/`Beta` per water level), plus `results`, a list with one entry per failure path giving its per-node and cumulative probabilities at each requested water level.
 
+## Input assumptions
+
+The Excel-based workflow expects workbook content structured around:
+
+- `metadata`
+- `faalpadschema`
+- `faalpadkansen`
+- one or more `FP_*` frequency sheets
+
+If these tables or sheets are missing or inconsistent, loading will fail fast with validation errors.
+
 ## Standalone reliability integration
 
 `failure_paths.reliability` can also be used on its own, outside the event-graph/Excel workflow, to integrate two independent stochasts — for example an empirical water-level exceedance curve (hazard) against a strength fragility curve:
@@ -99,14 +110,3 @@ Plot merged curves from SQLite:
 ```bash
 python scripts/plot_sqlite_vakken_knopen.py --db-path path/to/failure_paths.db --output-file output.png
 ```
-
-## Input assumptions
-
-The Excel-based workflow expects workbook content structured around:
-
-- `metadata`
-- `faalpadschema`
-- `faalpadkansen`
-- one or more `FP_*` frequency sheets
-
-If these tables or sheets are missing or inconsistent, loading will fail fast with validation errors.
