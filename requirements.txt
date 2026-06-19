@@ -1,5 +1,0 @@
-plotly
-pandas
-scipy
-matplotlib
-tqdm
