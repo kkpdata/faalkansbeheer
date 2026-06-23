@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import math
 from pathlib import Path
 
@@ -343,8 +344,9 @@ def main() -> None:
     # add combined Pf to the dataframe (same value for each row)
     df_result1["Traject_Pf_bovengrens"] = bovengrens_pf
     df_result1["Traject_Pf_ondergrens"] = ondergrens_pf
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
 
-    df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result.xlsx", index=False)
+    df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result_{timestamp}.xlsx", index=False)
 
     export_dir = output_folder / dir_traject.name
     _export_graph(df=df_result1, export_dir=export_dir, dijktraject=dijktraject)
