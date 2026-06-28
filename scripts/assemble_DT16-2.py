@@ -116,7 +116,7 @@ def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
     df["beta"] = df["Vak_Section_Pf"].apply(lambda x: -1 * sct.norm.ppf(x))
     df_beta_vak = df[["id", "m_start", "m_end", "beta"]]
 
-    beta_traject = df["Traject_Pf_ondergrens"].iloc[0]
+    beta_traject = -1* sct.norm.ppf(df["Traject_Pf_ondergrens"].iloc[0])
 
     traject_normering = TrajectNormering(traject_id=dijktraject, norm_is_ondergrens=True)
     GraphBetaValuesSingleInteractive(
