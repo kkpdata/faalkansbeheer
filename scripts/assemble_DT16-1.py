@@ -110,7 +110,7 @@ def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
     df["beta"] = df["Vak_Section_Pf"].apply(lambda x: -1 * sct.norm.ppf(x))
     df_beta_vak = df[["id", "m_start", "m_end", "beta"]]
 
-    beta_traject = df["Traject_Pf_ondergrens"].iloc[0]
+    beta_traject = -1 * sct.norm.ppf(df["Traject_Pf_ondergrens"].iloc[0])
 
     traject_normering = TrajectNormering(traject_id=dijktraject, norm_is_ondergrens=True)
     GraphBetaValuesSingleInteractive(
@@ -257,6 +257,17 @@ def main() -> None:
                 ax.set_yscale("log")
                 ax.set_ylabel("$P_f$")
             ax.set_xlabel("water level [m+NAP]")
+            # set limits for clearer visualization of the curves (can be adjusted if needed)
+            ax.set_xlim(0.0, 7.0)
+            ax.set_ylim(-5.0, 20.0)
+            # Legenda buiten onder de grafiek
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(
+                handles, labels, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2, fontsize=8, frameon=True
+            )
+
+            # Ruimte maken voor legenda onderaan
+            fig.subplots_adjust(bottom=0.32)
             ax.grid()
             fig.savefig(fig_path / f"fc_scenario_{scen_name}.png", bbox_inches="tight")
             plt.close("all")
@@ -344,6 +355,10 @@ def main() -> None:
     # add combined Pf to the dataframe (same value for each row)
     df_result1["Traject_Pf_bovengrens"] = bovengrens_pf
     df_result1["Traject_Pf_ondergrens"] = ondergrens_pf
+    # calculate percentage of each Vak_Section_Pf relative to the Traject_Pf_bovengrens
+    df_result1["Vak_Section_Pf_percentage"] = df_result1["Vak_Section_Pf"] / bovengrens_pf
+    # calculate N_traject
+    df_result1["N_traject"] = bovengrens_pf / ondergrens_pf
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
 
     df_result1.to_excel(output_folder / dir_traject.name / f"{dir_traject.name}_result_{timestamp}.xlsx", index=False)
