@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats as sct
 import tqdm.auto as tqdm
-from args_settings import parse_args
+from args_settings import parse_args # import necessary arguments from args_settings.py
 from failure_paths.common.assemblage import bepaal_N_vak, combine_series
 from failure_paths.common.graph_betrouwbaarheidsindex import GraphBetaValuesSingleInteractive
 from failure_paths.common.interp import interpolate_beta_curve
