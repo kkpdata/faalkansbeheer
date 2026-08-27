@@ -80,7 +80,7 @@ def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
     df["beta"] = df["Vak_Section_Pf"].apply(lambda x: -1 * sct.norm.ppf(x))
     df_beta_vak = df[["id", "m_start", "m_end", "beta"]]
 
-    beta_traject = df["Traject_Pf_ondergrens"].iloc[0]
+    beta_traject = -1* sct.norm.ppf(df["Traject_Pf_bovengrens"].iloc[0])
 
     traject_normering = TrajectNormering(traject_id=dijktraject, norm_is_ondergrens=True)
     GraphBetaValuesSingleInteractive(
@@ -197,7 +197,7 @@ def main() -> None:
             print(f"Processing section '{section_name}', scenario '{scen_name}'")
             # Save tree plot
             if plot_tree:
-                eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=6)
+                eeg.plot(view=False, output_path=fig_path / f"tree_scenario_{scen_name}.png", water_level=5.6)
 
             # Get combined scenario fragility curve
             fc_comb, fcs = eeg.get_failure_path_probabilities(water_levels=water_levels)
