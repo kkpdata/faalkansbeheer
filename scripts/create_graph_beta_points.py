@@ -21,7 +21,8 @@ def parse_args() -> argparse.Namespace:
         default=Path(r"C:\Users\SAKA\Downloads\DT16-1_output\99 Assemblage 16-1\scatter_plot.png"),
         help="Path to save the output scatter plot image.",
     )
-    parser.add_argument("--x_column", type=str, default="% kerende hoogte", help="Column name for X-axis values.")
+    #parser.add_argument("--x_column", type=str, default="% kerende hoogte", help="Column name for X-axis values.")
+    parser.add_argument("--x_column", type=str, default="verval", help="Column name for X-axis values.")
     parser.add_argument("--y_column", type=str, default="beta", help="Column name for Y-axis values.")
     return parser.parse_args()
 
