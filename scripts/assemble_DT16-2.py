@@ -35,7 +35,8 @@ def parse_args() -> argparse.Namespace:
         "--dir-traject",
         type=Path,
         default=Path(
-            "C:/Users/SAKA/Waterschap Rivierenland/Beoordeling Primaire Keringen - LBO2 - 3_Project/Gedeelde informatie/Opleverdossier/99 Assemblage 16-2"
+            "C:/Users/SAKA/Downloads/DT16-2_INPUT"
+            #"C:/Users/SAKA/Waterschap Rivierenland/Beoordeling Primaire Keringen - LBO2 - 3_Project/Gedeelde informatie/Opleverdossier/99 Assemblage 16-2"
         ),
     )
     parser.add_argument("--output-folder", type=Path, default=Path("C:/Users/SAKA/Downloads/DT16-2_output"))
@@ -116,7 +117,7 @@ def _export_graph(df: DataFrame, export_dir: str, dijktraject: str):
     df["beta"] = df["Vak_Section_Pf"].apply(lambda x: -1 * sct.norm.ppf(x))
     df_beta_vak = df[["id", "m_start", "m_end", "beta"]]
 
-    beta_traject = -1* sct.norm.ppf(df["Traject_Pf_ondergrens"].iloc[0])
+    beta_traject = -1* sct.norm.ppf(df["Traject_Pf_bovengrens"].iloc[0])
 
     traject_normering = TrajectNormering(traject_id=dijktraject, norm_is_ondergrens=True)
     GraphBetaValuesSingleInteractive(
