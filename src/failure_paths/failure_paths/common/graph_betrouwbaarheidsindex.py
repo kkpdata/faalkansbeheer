@@ -176,11 +176,24 @@ class GraphBetaValuesSingleInteractive:
                         "line": {"color": "black", "width": 1},
                     }
                 )
+                vak_id = vak["id"]
+                try:
+                    vak_id_num = float(vak_id)
+                except (TypeError, ValueError):
+                    vak_id_text = ""
+                else:
+                    if np.isnan(vak_id_num):
+                        vak_id_text = ""
+                    elif vak_id_num.is_integer():
+                        vak_id_text = str(int(vak_id_num))
+                    else:
+                        vak_id_text = str(vak_id)
+
                 self.annotation_vak.append(
                     {
                         "x": (vak["m_start"] + vak["m_end"]) / 2,
                         "y": np.log10(2),
-                        "text": vak["id"],
+                        "text": vak_id_text,
                         "showarrow": False,
                         "xanchor": "center",
                         "yanchor": "bottom",
@@ -227,7 +240,7 @@ class GraphBetaValuesSingleInteractive:
                     "showarrow": False,
                     "xanchor": "left",
                     "yanchor": "middle",
-                    "font": {"color": "black", "size": 10},
+                    "font": {"color": "black", "size": 16},
                     "align": "right",
                 }
             )
@@ -314,7 +327,8 @@ class GraphBetaValuesSingleInteractive:
         self.fig.update_layout(
             title="Betrouwbaarheidsindex",
             xaxis={
-                "title": "Metrering",
+                "title": {"text": "Metrering", "font": {"size": 16}},
+                "tickfont": {"size": 14},
                 "type": "linear",
                 "range": [0, self.m_end],
                 "showgrid": True,
@@ -322,7 +336,8 @@ class GraphBetaValuesSingleInteractive:
                 "gridcolor": "gray",
             },
             yaxis={
-                "title": "Betrouwbaarheidsindex β [-]",
+                "title": {"text": "Betrouwbaarheidsindex β [-]", "font": {"size": 16}},
+                "tickfont": {"size": 14},
                 "type": "log",
                 "range": [np.log10(2), np.log10(10)],
                 "showgrid": True,
