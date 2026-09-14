@@ -25,12 +25,14 @@ The code is aimed at engineers who need a reproducible workflow from source spre
 
 ## Setup
 
-[Pixi](https://pixi.sh) is required. It pulls in all Python dependencies plus the Graphviz binary that `EventGraph.plot()` shells out to — there is no supported pip-only install.
+[`Pixi`](https://pixi.sh) is the supported way to create the development environment. It installs the Python dependencies plus the Graphviz binary that `EventGraph.plot()` uses. The package metadata is also available in `src/failure_paths/pyproject.toml`, but a pip-only environment does not install the complete workspace toolchain.
 
 ```bash
 pixi install
-pixi shell
+pixi run python -c "import failure_paths; print(failure_paths.__version__)"
 ```
+
+Run project commands with `pixi run`, or enter the environment first with `pixi shell`.
 
 ## Typical workflow
 
@@ -93,20 +95,24 @@ Because R and S are independent, `pf` reduces to a 1D integral (`pf = ∫ F_R(s)
 
 ## Useful commands
 
-Run tests:
+Run tests from the Pixi environment:
 
 ```bash
-pytest
+pixi run pytest
 ```
 
-Ingest Excel scenarios into SQLite:
+Ingest Excel scenarios into SQLite. Edit the configuration constants at the top of the script (`DB_PATH`, `SECTION`, `SHEETS`, `EXCELS`, and `TAGS`) before running it:
 
 ```bash
-python scripts/ingest_excels_to_sqlite.py
+pixi run python scripts/ingest_excels_to_sqlite.py
 ```
 
-Plot merged curves from SQLite:
+The ingest script also demonstrates loading a scenario back from SQLite and plotting its event tree. Plot merged curves from an existing SQLite database:
 
 ```bash
-python scripts/plot_sqlite_vakken_knopen.py --db-path path/to/failure_paths.db --output-file output.png
+pixi run python scripts/plot_sqlite_vakken_knopen.py \
+    --db-path path/to/failure_paths.db \
+    --output-file output.png
 ```
+
+`--sections` and `--nodes` are optional comma-separated filters; omit them to include all available sections or nodes. Use `--metric pf` to plot failure probabilities instead of reliability indices.
