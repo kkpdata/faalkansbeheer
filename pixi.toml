@@ -54,3 +54,4 @@ scipy = ">=1.16"
 matplotlib = ">=3.10.8,<4"
 tqdm = ">=4.67.1,<5"
 failure_paths = { path = "src/failure_paths", editable = true }
+probabilistic-library = ">=26.3.1, <27"
