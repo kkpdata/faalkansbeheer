@@ -3,6 +3,7 @@ import scipy.stats as sct
 TRAJECT_PROPERTIES = {
     "16-1": {"signaleringswaarde": 100_000, "ondergrens": 30_000, "lengte": 15_059.41},
     "16-2": {"signaleringswaarde": 30_000, "ondergrens": 10_000, "lengte": 30972.09},
+    "41-4": {"signaleringswaarde": 10_000, "ondergrens": 3_000, "lengte": 20050.84}
 }
 
 
